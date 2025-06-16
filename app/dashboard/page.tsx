@@ -60,10 +60,6 @@ export default function DashboardPage() {
     router.push('/login');
   };
 
-  const handleTerminalClick = (terminal: number) => {
-    router.push(`/rota?terminal=${terminal}`);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-pink-50">

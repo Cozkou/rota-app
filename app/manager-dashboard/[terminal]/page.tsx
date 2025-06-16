@@ -91,7 +91,7 @@ export default function TerminalRotaPage() {
       if (p.id === person.id) {
         const newShifts = [...p.shifts];
         newShifts[dayIndex] = value;
-        return { ...p, shifts: newShifts };
+        return { ...p, shifts: newShifts, hours: recalcHours(newShifts) };
       }
       return p;
     });
@@ -117,17 +117,27 @@ export default function TerminalRotaPage() {
   };
 
   const confirmRemoveStaff = async () => {
-    if (staffToRemove) {
-      await supabase.from("staff").delete().eq("id", staffToRemove.id);
-      setStaff(staff.filter((s) => s.id !== staffToRemove.id));
-      setStaffToRemove(null);
+    if (!staffToRemove) return;
+    
+    try {
+      const { error } = await supabase
+        .from('staff')
+        .delete()
+        .eq('id', staffToRemove.id);
+
+      if (error) throw error;
+
+      setStaff(staff.filter(p => p.id !== staffToRemove.id));
       setShowModal(false);
+      setStaffToRemove(null);
+    } catch (error) {
+      console.error('Error removing staff:', error);
     }
   };
 
   const cancelRemoveStaff = () => {
-    setStaffToRemove(null);
     setShowModal(false);
+    setStaffToRemove(null);
   };
 
   const handleSignOut = async () => {

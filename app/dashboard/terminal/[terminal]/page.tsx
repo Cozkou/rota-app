@@ -68,7 +68,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
       }
     }
     checkAuth();
-  }, [router, terminal]);
+  }, [router, terminal, days]);
 
   const calculateHours = (timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;

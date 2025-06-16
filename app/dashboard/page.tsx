@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
 interface RotaDay {
   day: string;
@@ -20,17 +22,16 @@ export default function DashboardPage() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.replace("/login");
-          return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          redirect('/login');
         }
 
         // Fetch user role
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
-          .eq('id', user.id)
+          .eq('id', session.user.id)
           .single();
 
         if (profile) {
@@ -39,7 +40,7 @@ export default function DashboardPage() {
           const { data: rotaData } = await supabase
             .from('rota')
             .select('*')
-            .eq('user_id', user.id);
+            .eq('user_id', session.user.id);
 
           if (rotaData) {
             setRota(rotaData);
@@ -47,7 +48,7 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error('Error checking auth:', error);
-        router.replace("/login");
+        redirect('/login');
       } finally {
         setLoading(false);
       }
@@ -136,14 +137,14 @@ export default function DashboardPage() {
           <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Select Terminal</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-          {[2, 3, 4, 5].map((terminal) => (
-            <button
+          {[2, 3, 4, 5, 6, 7, 8].map((terminal) => (
+            <Link
               key={terminal}
-              onClick={() => router.push(`/dashboard/terminal/${terminal}`)}
+              href={`/dashboard/terminal/${terminal}`}
               className="w-full py-4 sm:py-6 rounded-xl bg-pink-100 hover:bg-pink-200 text-pink-700 text-xl sm:text-2xl font-bold shadow transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg"
             >
               Terminal {terminal}
-            </button>
+            </Link>
           ))}
         </div>
       </div>

@@ -48,55 +48,55 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-pink-50">
       {/* Hamburger Menu */}
-      <div className="fixed top-6 left-6 z-50">
-        <button
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-lg hover:bg-pink-100 transition-colors group"
-        >
-          <div className="relative w-6 h-6 flex items-center justify-center">
-            <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-1.5'}`}></span>
-            <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`}></span>
-            <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? '-rotate-45 translate-y-0' : 'translate-y-1.5'}`}></span>
-          </div>
-        </button>
-      </div>
-
-      {/* Sidebar Menu */}
-      {isMenuOpen && (
-        <div className="fixed top-0 left-0 h-full w-64 bg-white/80 backdrop-blur-sm shadow-lg transform transition-transform duration-300 ease-in-out z-40">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-8">
-              <div className="flex-1">
-                <h2 className="text-xl font-semibold text-pink-600">Dashboard</h2>
-              </div>
-              <div className="ml-4">
-                <button
-                  onClick={() => setIsMenuOpen(false)}
-                  className="p-2 rounded-lg hover:bg-pink-100 flex-shrink-0"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-pink-600">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+      {!isMenuOpen && (
+        <div className="fixed top-6 left-6 z-50">
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="p-2 rounded-lg hover:bg-pink-100 transition-colors group"
+          >
+            <div className="relative w-6 h-6 flex items-center justify-center">
+              <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-1.5'}`}></span>
+              <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`}></span>
+              <span className={`absolute h-0.5 w-6 bg-pink-600 transform transition-all duration-300 ${isMenuOpen ? '-rotate-45 translate-y-0' : 'translate-y-1.5'}`}></span>
             </div>
-            <div className="space-y-2">
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="w-full text-left px-4 py-2 rounded-lg hover:bg-pink-100 text-pink-600"
-              >
-                Home
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="w-full text-left px-4 py-2 rounded-lg hover:bg-pink-100 text-pink-600"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
+          </button>
         </div>
       )}
+
+      {/* Sidebar Menu */}
+      <div className={`fixed top-0 left-0 h-full w-64 bg-white/80 backdrop-blur-sm shadow-lg transform transition-all duration-300 ease-in-out z-40 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex-1">
+              <h2 className="text-xl font-semibold text-pink-600">Dashboard</h2>
+            </div>
+            <div className="ml-4">
+              <button
+                onClick={() => setIsMenuOpen(false)}
+                className="p-2 rounded-lg hover:bg-pink-100 flex-shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-pink-600">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="w-full text-left px-4 py-2 rounded-lg hover:bg-pink-100 text-pink-600"
+            >
+              Home
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="w-full text-left px-4 py-2 rounded-lg hover:bg-pink-100 text-pink-600"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <main className="pt-20 px-4">

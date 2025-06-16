@@ -86,11 +86,16 @@ export default function TerminalRotaPage() {
 
   const recalcHours = (shifts: string[]) => shifts.reduce((sum: number, shift: string) => sum + parseShift(shift), 0);
 
-  const handleShiftChange = (i: number, d: number, value: string) => {
-    const updated = [...staff];
-    updated[i].shifts[d] = value;
-    updated[i].hours = recalcHours(updated[i].shifts);
-    setStaff(updated);
+  const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
+    const updatedStaff = staff.map(p => {
+      if (p.id === person.id) {
+        const newShifts = [...p.shifts];
+        newShifts[dayIndex] = value;
+        return { ...p, shifts: newShifts };
+      }
+      return p;
+    });
+    setStaff(updatedStaff);
   };
 
   const handleAddStaff = async () => {
@@ -142,7 +147,7 @@ export default function TerminalRotaPage() {
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-pink-100 to-pink-200 p-4">
       {/* Hamburger Menu */}
       {!isMenuOpen && (
-        <div className="fixed top-6 left-6 z-50">
+        <div className="fixed top-4 left-4 z-50 sm:top-6 sm:left-6">
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="p-2 rounded-lg hover:bg-pink-100 transition-colors group"
@@ -157,13 +162,13 @@ export default function TerminalRotaPage() {
       )}
 
       {/* Sidebar Menu */}
-      <div className={`fixed top-0 left-0 h-full w-72 bg-white/90 backdrop-blur-md shadow-xl transform transition-all duration-300 ease-in-out z-40 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-8">
-          <div className="flex justify-between items-start mb-12">
+      <div className={`fixed top-0 left-0 h-full w-[85%] sm:w-72 bg-white/90 backdrop-blur-md shadow-xl transform transition-all duration-300 ease-in-out z-40 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 sm:p-8">
+          <div className="flex justify-between items-start mb-8 sm:mb-12">
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-pink-600 tracking-wide">Manager Dashboard</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-pink-600 tracking-wide">Manager Dashboard</h2>
               {userRole && (
-                <p className="text-base text-pink-500 mt-2 font-medium">Hello {userRole}</p>
+                <p className="text-sm sm:text-base text-pink-500 mt-2 font-medium">Hello {userRole}</p>
               )}
             </div>
             <div className="ml-4">
@@ -171,7 +176,7 @@ export default function TerminalRotaPage() {
                 onClick={() => setIsMenuOpen(false)}
                 className="p-2 rounded-lg hover:bg-pink-100/50 flex-shrink-0 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-pink-600">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -180,7 +185,7 @@ export default function TerminalRotaPage() {
           <div className="space-y-3">
             <button
               onClick={() => router.push('/manager-dashboard')}
-              className="w-full text-left px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
+              className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
@@ -189,7 +194,7 @@ export default function TerminalRotaPage() {
             </button>
             <button
               onClick={handleSignOut}
-              className="w-full text-left px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
+              className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
@@ -200,74 +205,86 @@ export default function TerminalRotaPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto bg-white/90 rounded-3xl shadow-2xl p-8 md:p-12">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10 gap-6">
-          <h1 className="playfair text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <span className="font-semibold text-pink-700 text-lg">Terminal {terminal}</span>
+      <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
+          <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
+          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
         </div>
-        <div className="overflow-x-auto rounded-2xl shadow-md">
+        <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
           {loading ? (
-            <div className="text-center text-pink-600 py-10 text-lg font-semibold">Loading staff...</div>
+            <div className="text-center text-pink-600 py-10 text-base sm:text-lg font-semibold">Loading staff...</div>
           ) : (
-            <table className="min-w-full border-separate border-spacing-0 text-sm md:text-base text-gray-800 bg-white rounded-2xl overflow-hidden">
+            <table className="min-w-full border-separate border-spacing-0 text-xs sm:text-sm md:text-base text-gray-800 bg-white rounded-xl sm:rounded-2xl overflow-hidden">
               <thead>
-                <tr className="bg-pink-200 text-pink-700 text-base">
-                  <th className="border-b border-pink-100 px-4 py-3 font-bold">Name</th>
-                  <th className="border-b border-pink-100 px-4 py-3 font-bold">Hours</th>
+                <tr className="bg-pink-200 text-pink-700 text-sm sm:text-base">
+                  <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
+                  <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Hours</th>
                   {days.map((day) => (
-                    <th key={day} className="border-b border-pink-100 px-4 py-3 font-bold">{day}</th>
+                    <th key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {staff.map((person, i) => (
-                  <tr key={person.id} className={i % 2 === 0 ? "bg-white" : "bg-pink-50 hover:bg-pink-100 transition"}>
-                    <td className="border-b border-pink-100 px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">{person.name}</td>
-                    <td className="border-b border-pink-100 px-4 py-3 text-gray-800 text-center">{person.hours}</td>
-                    {person.shifts && person.shifts.map((shift, d) => (
-                      <td key={d} className="border-b border-pink-100 px-2 py-2">
-                        <input
-                          className="w-full px-2 py-1 border border-pink-200 rounded-lg text-sm md:text-base text-gray-800 bg-white focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition shadow-sm"
-                          value={shift}
-                          onChange={(e) => handleShiftChange(i, d, e.target.value)}
-                          placeholder="--"
-                        />
+                {staff.map((person) => (
+                  <tr key={person.id} className="hover:bg-pink-50/50">
+                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">{person.name}</td>
+                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">{person.hours}</td>
+                    {days.map((day, d) => (
+                      <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                        <select
+                          value={person.shifts[d]}
+                          onChange={(e) => handleShiftChange(person, d, e.target.value)}
+                          className="w-full bg-transparent focus:outline-none focus:ring-2 focus:ring-pink-500 rounded"
+                        >
+                          <option value="">-</option>
+                          <option value="M">M</option>
+                          <option value="A">A</option>
+                          <option value="N">N</option>
+                        </select>
                       </td>
                     ))}
-                    <td className="border-b border-pink-100 px-4 py-3 text-center">
-                      <button onClick={() => handleRemoveStaff(person)} className="text-pink-500 hover:text-pink-700 font-bold text-2xl md:text-3xl transition-transform hover:scale-125 ml-2">&times;</button>
-                    </td>
                   </tr>
                 ))}
-                {/* Inline add staff row */}
-                <tr className="bg-pink-100">
-                  <td className="px-4 py-3">
-                    <input
-                      className="w-full px-2 py-1 border border-pink-300 rounded-lg text-sm md:text-base text-gray-800 bg-white focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition shadow-sm"
-                      placeholder="Add staff name"
-                      value={newStaff}
-                      onChange={(e) => setNewStaff(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddStaff(); }}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-center" colSpan={days.length + 1}>
-                    <button onClick={handleAddStaff} className="px-5 py-2 rounded-full bg-pink-600 text-white font-semibold shadow hover:bg-pink-700 transition">Add</button>
-                  </td>
-                </tr>
               </tbody>
             </table>
           )}
         </div>
+
+        <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-4">
+          <input
+            type="text"
+            value={newStaff}
+            onChange={(e) => setNewStaff(e.target.value)}
+            placeholder="Enter staff name"
+            className="flex-1 px-4 py-2 rounded-lg border-2 border-pink-200 focus:border-pink-400 focus:outline-none text-sm sm:text-base"
+          />
+          <button
+            onClick={handleAddStaff}
+            className="px-6 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base font-medium"
+          >
+            Add Staff
+          </button>
+        </div>
       </div>
-      {/* Confirmation Modal */}
+
       {showModal && staffToRemove && (
-        <div className="fixed inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm z-50">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-xs">
-            <h3 className="text-xl font-semibold mb-4 text-gray-800">Remove Staff Member</h3>
-            <p className="mb-6 text-gray-700">Are you sure you want to remove <span className="font-bold text-pink-600">{staffToRemove.name}</span>?</p>
-            <div className="flex justify-end gap-3">
-              <button onClick={cancelRemoveStaff} className="px-5 py-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold">Cancel</button>
-              <button onClick={confirmRemoveStaff} className="px-5 py-2 rounded-full bg-pink-600 text-white hover:bg-pink-700 font-semibold">Remove</button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full">
+            <h3 className="text-xl sm:text-2xl font-bold text-pink-600 mb-4">Remove Staff</h3>
+            <p className="text-gray-600 mb-6">Are you sure you want to remove {staffToRemove.name}?</p>
+            <div className="flex gap-4">
+              <button
+                onClick={confirmRemoveStaff}
+                className="flex-1 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base"
+              >
+                Remove
+              </button>
+              <button
+                onClick={cancelRemoveStaff}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm sm:text-base"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

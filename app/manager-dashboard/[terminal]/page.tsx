@@ -17,7 +17,7 @@ function parseShift(shift: string): number {
   const match = shift.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
   if (!match) return 0;
   const [ , sh, sm, eh, em ] = match.map(Number);
-  let start = sh * 60 + sm;
+  const start = sh * 60 + sm;
   let end = eh * 60 + em;
   if (end < start) end += 24 * 60;
   let diff = (end - start) / 60;
@@ -26,7 +26,6 @@ function parseShift(shift: string): number {
 }
 
 export default function TerminalRotaPage() {
-  const router = useRouter();
   const params = useParams();
   const terminal = params.terminal;
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -43,7 +42,7 @@ export default function TerminalRotaPage() {
         .select("id, name, terminal")
         .eq("terminal", String(terminal));
       console.log('Fetched staff:', data, 'Error:', error);
-      if (!error && data) setStaff(data.map((s: any) => ({ ...s, hours: 0, shifts: Array(7).fill("") })));
+      if (!error && data) setStaff(data.map((s: { id: number; name: string; terminal: string }) => ({ ...s, hours: 0, shifts: Array(7).fill("") })));
       setLoading(false);
     }
     fetchStaff();

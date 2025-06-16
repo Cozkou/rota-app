@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { use } from "react";
 
@@ -19,7 +19,19 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
-  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  const days = useMemo(() => {
+    const today = new Date();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      return {
+        date: date.toISOString().split('T')[0],
+        name: dayNames[date.getDay()]
+      };
+    });
+  }, []);
 
   useEffect(() => {
     async function checkAuth() {
@@ -48,7 +60,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
           if (staffData) {
             // Convert staff data to include shifts array and calculate hours
             const staffWithShifts = staffData.map(person => {
-              const shifts = days.map(day => person[day.toLowerCase()] || '');
+              const shifts = days.map(day => person[day.name.toLowerCase()] || '');
               const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
               return {
                 ...person,
@@ -185,7 +197,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
                   {days.map((day) => (
-                    <th key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day}</th>
+                    <th key={day.name} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day.name}</th>
                   ))}
                 </tr>
               </thead>
@@ -201,9 +213,9 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                     <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">
                       {person.hours !== undefined ? (Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)) : '-'}
                     </td>
-                    {days.map((day, d) => (
-                      <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                        <div className="text-xs text-gray-700">{person.shifts && person.shifts[d] ? person.shifts[d] : '-'}</div>
+                    {days.map((day) => (
+                      <td key={day.name} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                        <div className="text-xs text-gray-700">{person.shifts && person.shifts.includes(day.name.toLowerCase()) ? '✓' : '-'}</div>
                       </td>
                     ))}
                   </tr>

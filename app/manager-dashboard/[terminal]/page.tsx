@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -26,6 +26,7 @@ function parseShift(shift: string): number {
 }
 
 export default function TerminalRotaPage() {
+  const router = useRouter();
   const params = useParams();
   const terminal = params.terminal;
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -33,6 +34,16 @@ export default function TerminalRotaPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [staffToRemove, setStaffToRemove] = useState<Staff | null>(null);
+
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace("/login");
+      }
+    }
+    checkAuth();
+  }, [router]);
 
   useEffect(() => {
     async function fetchStaff() {

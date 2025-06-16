@@ -26,12 +26,24 @@ export default function LoginPage() {
         password: formData.password,
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       if (data?.user) {
-        router.push('/dashboard');
+        console.log("Logged in user UUID:", data.user.id);
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .single();
+        console.log('Profile:', profile, 'Profile error:', profileError);
+
+        if (profileError) throw profileError;
+
+        if (profile?.role === 'manager') {
+          router.push('/manager-dashboard');
+        } else {
+          router.push('/dashboard');
+        }
       }
     } catch (err) {
       const authError = err as AuthError;

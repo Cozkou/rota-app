@@ -1,10 +1,23 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 const terminals = [2, 3, 4, 5];
 
 export default function ManagerDashboardHome() {
   const router = useRouter();
+
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace("/login");
+      }
+    }
+    checkAuth();
+  }, [router]);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-pink-50 via-pink-100 to-pink-200 p-4">
       <h1 className="playfair text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest mb-10" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>

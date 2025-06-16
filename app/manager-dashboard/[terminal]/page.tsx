@@ -5,24 +5,12 @@ import { supabase } from "@/lib/supabase";
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-type Staff = {
-  id: number;
+interface Staff {
+  id: string;
   name: string;
-  terminal: number | string;
-  hours: number;
+  role: string;
   shifts: string[];
-};
-
-function parseShift(shift: string): number {
-  const match = shift.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
-  if (!match) return 0;
-  const [ , sh, sm, eh, em ] = match.map(Number);
-  const start = sh * 60 + sm;
-  let end = eh * 60 + em;
-  if (end < start) end += 24 * 60;
-  let diff = (end - start) / 60;
-  if (diff > 6) diff -= 1;
-  return Math.max(0, diff);
+  hours: number;
 }
 
 export default function TerminalRotaPage() {
@@ -31,12 +19,14 @@ export default function TerminalRotaPage() {
   const terminal = Number(params.terminal);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [newStaff, setNewStaff] = useState("");
-  const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [staffToRemove, setStaffToRemove] = useState<Staff | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
@@ -64,14 +54,24 @@ export default function TerminalRotaPage() {
           // User is authorized
           setIsAuthorized(true);
 
-          // Fetch staff data
+          // Fetch staff data with their shifts
           const { data: staffData } = await supabase
             .from("staff")
             .select("*")
             .eq("terminal", String(terminal));
 
           if (staffData) {
-            setStaff(staffData.map((s) => ({ ...s, hours: 0, shifts: Array(7).fill("") })));
+            // Convert staff data to include shifts array and calculate hours
+            const staffWithShifts = staffData.map(person => {
+              const shifts = days.map(day => person[day.toLowerCase()] || '');
+              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+              return {
+                ...person,
+                shifts,
+                hours: totalHours
+              };
+            });
+            setStaff(staffWithShifts);
           }
         }
       } catch (error) {
@@ -84,18 +84,79 @@ export default function TerminalRotaPage() {
     checkAuth();
   }, [router, terminal]);
 
-  const recalcHours = (shifts: string[]) => shifts.reduce((sum: number, shift: string) => sum + parseShift(shift), 0);
+  const calculateHours = (timeRange: string): number => {
+    if (!timeRange || !timeRange.includes('-')) return 0;
+    
+    const [start, end] = timeRange.split('-').map(time => time.trim());
+    if (!start || !end) return 0;
+
+    const [startHour, startMinute] = start.split(':').map(Number);
+    const [endHour, endMinute] = end.split(':').map(Number);
+
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) return 0;
+
+    let hours = endHour - startHour;
+    let minutes = endMinute - startMinute;
+
+    if (minutes < 0) {
+      hours -= 1;
+      minutes += 60;
+    }
+
+    const totalHours = hours + minutes / 60;
+    
+    // Subtract 1 hour for breaks if shift is longer than 6 hours
+    return totalHours > 6 ? totalHours - 1 : totalHours;
+  };
 
   const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
+    // Update local state
     const updatedStaff = staff.map(p => {
       if (p.id === person.id) {
         const newShifts = [...p.shifts];
         newShifts[dayIndex] = value;
-        return { ...p, shifts: newShifts, hours: recalcHours(newShifts) };
+        const totalHours = newShifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+        return { ...p, shifts: newShifts, hours: totalHours };
       }
       return p;
     });
     setStaff(updatedStaff);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSaveChanges = async () => {
+    setIsSaving(true);
+    try {
+      // Update all staff members' shifts
+      const updatePromises = staff.map(person => {
+        const updates = days.reduce((acc, day, index) => ({
+          ...acc,
+          [day.toLowerCase()]: person.shifts[index] || null
+        }), {});
+
+        return supabase
+          .from('staff')
+          .update(updates)
+          .eq('id', person.id);
+      });
+
+      const results = await Promise.all(updatePromises);
+      const hasError = results.some(result => result.error);
+
+      if (hasError) {
+        console.error('Error saving changes:', results.find(r => r.error)?.error);
+        alert('There was an error saving some changes. Please try again.');
+        return;
+      }
+
+      setHasUnsavedChanges(false);
+      alert('Changes saved successfully!');
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      alert('There was an error saving changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddStaff = async () => {
@@ -176,7 +237,7 @@ export default function TerminalRotaPage() {
         <div className="p-6 sm:p-8">
           <div className="flex justify-between items-start mb-8 sm:mb-12">
             <div className="flex-1">
-              <h2 className="text-xl sm:text-2xl font-bold text-pink-600 tracking-wide">Manager Dashboard</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-pink-600 tracking-wide">Dashboard</h2>
               {userRole && (
                 <p className="text-sm sm:text-base text-pink-500 mt-2 font-medium">Hello {userRole}</p>
               )}
@@ -194,7 +255,7 @@ export default function TerminalRotaPage() {
           </div>
           <div className="space-y-3">
             <button
-              onClick={() => router.push('/manager-dashboard')}
+              onClick={() => router.push('/dashboard')}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
@@ -202,6 +263,29 @@ export default function TerminalRotaPage() {
               </svg>
               <span className="transition-transform duration-300 group-hover:translate-x-1">Home</span>
             </button>
+
+            <div className="pt-2">
+              <h3 className="text-sm font-semibold text-pink-600 mb-2 px-4">Select Terminal</h3>
+              <div className="space-y-2">
+                {[2, 3, 4, 5].map((term) => (
+                  <button
+                    key={term}
+                    onClick={() => router.push(`/manager-dashboard/${term}`)}
+                    className={`w-full text-left px-4 sm:px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${
+                      term === terminal
+                        ? 'bg-pink-100 text-pink-700 font-medium'
+                        : 'hover:bg-pink-100/50 text-pink-600'
+                    }`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+                    </svg>
+                    <span className="transition-transform duration-300 group-hover:translate-x-1">Terminal {term}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={handleSignOut}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
@@ -218,7 +302,27 @@ export default function TerminalRotaPage() {
       <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
           <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <span className="font-semibold text-pink-700 text-base sm:text-lg text-center">Terminal {terminal}</span>
+            <button
+              onClick={handleSaveChanges}
+              disabled={!hasUnsavedChanges || isSaving}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+                hasUnsavedChanges
+                  ? 'bg-pink-600 text-white hover:bg-pink-700 hover:shadow-lg'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isSaving ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  <span>Saving...</span>
+                </div>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
           {loading ? (
@@ -228,33 +332,35 @@ export default function TerminalRotaPage() {
               <thead>
                 <tr className="bg-pink-200 text-pink-700 text-sm sm:text-base">
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
-                  <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Hours</th>
+                  <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
                   {days.map((day) => (
                     <th key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day}</th>
                   ))}
-                  <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Actions</th>
+                  <th className="border-b border-pink-100 w-10"></th>
                 </tr>
               </thead>
               <tbody>
                 {staff.map((person) => (
                   <tr key={person.id} className="hover:bg-pink-50/50">
-                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">{person.name}</td>
-                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">{person.hours}</td>
+                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                      <div>
+                        <div>{person.name}</div>
+                        <div className="text-xs text-gray-500">{person.role}</div>
+                      </div>
+                    </td>
+                    <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">{Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)}</td>
                     {days.map((day, d) => (
                       <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                        <select
+                        <input
+                          type="text"
                           value={person.shifts[d]}
                           onChange={(e) => handleShiftChange(person, d, e.target.value)}
-                          className="w-full bg-transparent focus:outline-none focus:ring-2 focus:ring-pink-500 rounded"
-                        >
-                          <option value="">-</option>
-                          <option value="M">M</option>
-                          <option value="A">A</option>
-                          <option value="N">N</option>
-                        </select>
+                          placeholder="--:--"
+                          className="w-full px-1.5 py-1 rounded-lg border border-pink-200 placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors text-xs"
+                        />
                       </td>
                     ))}
-                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                    <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-10">
                       <button
                         onClick={() => handleRemoveStaff(person)}
                         className="text-pink-500 hover:text-pink-700 transition-colors"
@@ -277,11 +383,11 @@ export default function TerminalRotaPage() {
             value={newStaff}
             onChange={(e) => setNewStaff(e.target.value)}
             placeholder="Enter staff name"
-            className="flex-1 px-4 py-2 rounded-lg border-2 border-pink-200 focus:border-pink-400 focus:outline-none text-sm sm:text-base"
+            className="flex-1 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
           />
           <button
             onClick={handleAddStaff}
-            className="px-6 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base font-medium"
+            className="px-6 py-2 sm:py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base font-medium"
           >
             Add Staff
           </button>

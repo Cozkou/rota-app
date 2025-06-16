@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rota App",
-  description: "Rota management application",
+  title: "Accessorize Rota Application",
+  description: "View rotas here!",
 };
 
 export default function RootLayout({

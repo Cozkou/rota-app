@@ -1,21 +1,25 @@
-'use client';
+"use client";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { use } from "react";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-
-interface RotaDay {
-  day: string;
-  shift: string;
+interface Staff {
+  id: string;
+  name: string;
+  role: string;
+  shifts: string[];
   hours: number;
 }
 
-export default function DashboardPage() {
+export default function TerminalView({ params }: { params: Promise<{ terminal: string }> }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { terminal } = use(params);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [rota, setRota] = useState<RotaDay[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   useEffect(() => {
     async function checkAuth() {
@@ -35,14 +39,25 @@ export default function DashboardPage() {
 
         if (profile) {
           setUserRole(profile.role);
-          // Fetch user's rota
-          const { data: rotaData } = await supabase
-            .from('rota')
+          // Fetch staff data for the terminal
+          const { data: staffData } = await supabase
+            .from('staff')
             .select('*')
-            .eq('user_id', user.id);
+            .eq('terminal', terminal);
 
-          if (rotaData) {
-            setRota(rotaData);
+          if (staffData) {
+            // Convert staff data to include shifts array and calculate hours
+            const staffWithShifts = staffData.map(person => {
+              const shifts = days.map(day => person[day.toLowerCase()] || '');
+              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+              return {
+                ...person,
+                shifts,
+                hours: totalHours
+              };
+            });
+
+            setStaff(staffWithShifts);
           }
         }
       } catch (error) {
@@ -53,7 +68,32 @@ export default function DashboardPage() {
       }
     }
     checkAuth();
-  }, [router]);
+  }, [router, terminal]);
+
+  const calculateHours = (timeRange: string): number => {
+    if (!timeRange || !timeRange.includes('-')) return 0;
+    
+    const [start, end] = timeRange.split('-').map(time => time.trim());
+    if (!start || !end) return 0;
+
+    const [startHour, startMinute] = start.split(':').map(Number);
+    const [endHour, endMinute] = end.split(':').map(Number);
+
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) return 0;
+
+    let hours = endHour - startHour;
+    let minutes = endMinute - startMinute;
+
+    if (minutes < 0) {
+      hours -= 1;
+      minutes += 60;
+    }
+
+    const totalHours = hours + minutes / 60;
+    
+    // Subtract 1 hour for breaks if shift is longer than 6 hours
+    return totalHours > 6 ? totalHours - 1 : totalHours;
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -117,6 +157,29 @@ export default function DashboardPage() {
               </svg>
               <span className="transition-transform duration-300 group-hover:translate-x-1">Home</span>
             </button>
+
+            <div className="pt-2">
+              <h3 className="text-sm font-semibold text-pink-600 mb-2 px-4">Select Terminal</h3>
+              <div className="space-y-2">
+                {[2, 3, 4, 5].map((term) => (
+                  <button
+                    key={term}
+                    onClick={() => router.push(`/dashboard/terminal/${term}`)}
+                    className={`w-full text-left px-4 sm:px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${
+                      term === Number(terminal)
+                        ? 'bg-pink-100 text-pink-700 font-medium'
+                        : 'hover:bg-pink-100/50 text-pink-600'
+                    }`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+                    </svg>
+                    <span className="transition-transform duration-300 group-hover:translate-x-1">Terminal {term}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={handleSignOut}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
@@ -133,18 +196,44 @@ export default function DashboardPage() {
       <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
           <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Select Terminal</span>
+          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-          {[2, 3, 4, 5].map((terminal) => (
-            <button
-              key={terminal}
-              onClick={() => router.push(`/dashboard/terminal/${terminal}`)}
-              className="w-full py-4 sm:py-6 rounded-xl bg-pink-100 hover:bg-pink-200 text-pink-700 text-xl sm:text-2xl font-bold shadow transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg"
-            >
-              Terminal {terminal}
-            </button>
-          ))}
+        <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
+          {loading ? (
+            <div className="text-center text-pink-600 py-10 text-base sm:text-lg font-semibold">Loading staff...</div>
+          ) : (
+            <table className="min-w-full border-separate border-spacing-0 text-xs sm:text-sm md:text-base text-gray-800 bg-white rounded-xl sm:rounded-2xl overflow-hidden">
+              <thead>
+                <tr className="bg-pink-200 text-pink-700 text-sm sm:text-base">
+                  <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
+                  <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
+                  {days.map((day) => (
+                    <th key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((person) => (
+                  <tr key={person.id} className="hover:bg-pink-50/50">
+                    <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                      <div>
+                        <div>{person.name}</div>
+                        <div className="text-xs text-gray-500">{person.role}</div>
+                      </div>
+                    </td>
+                    <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">
+                      {person.hours !== undefined ? (Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)) : '-'}
+                    </td>
+                    {days.map((day, d) => (
+                      <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                        <div className="text-xs text-gray-700">{person.shifts && person.shifts[d] ? person.shifts[d] : '-'}</div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

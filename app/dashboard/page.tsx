@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { User } from '@supabase/supabase-js';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -19,7 +17,6 @@ export default function DashboardPage() {
           router.push('/login');
           return;
         }
-        setUser(user);
       } catch (error) {
         console.error('Error checking user:', error);
         router.push('/login');

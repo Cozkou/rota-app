@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { AuthError } from '@supabase/supabase-js';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,8 +33,9 @@ export default function LoginPage() {
       if (data?.user) {
         router.push('/dashboard'); // Redirect to dashboard after successful login
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during login');
+    } catch (err) {
+      const authError = err as AuthError;
+      setError(authError.message || 'An error occurred during login');
     } finally {
       setIsLoading(false);
     }

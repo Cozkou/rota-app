@@ -157,29 +157,6 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
               </svg>
               <span className="transition-transform duration-300 group-hover:translate-x-1">Home</span>
             </button>
-
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-pink-600 mb-2 px-4">Select Terminal</h3>
-              <div className="space-y-2">
-                {[2, 3, 4, 5].map((term) => (
-                  <button
-                    key={term}
-                    onClick={() => router.push(`/dashboard/terminal/${term}`)}
-                    className={`w-full text-left px-4 sm:px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${
-                      term === Number(terminal)
-                        ? 'bg-pink-100 text-pink-700 font-medium'
-                        : 'hover:bg-pink-100/50 text-pink-600'
-                    }`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-                    </svg>
-                    <span className="transition-transform duration-300 group-hover:translate-x-1">Terminal {term}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <button
               onClick={handleSignOut}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"

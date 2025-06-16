@@ -54,24 +54,14 @@ export default function TerminalRotaPage() {
           // User is authorized
           setIsAuthorized(true);
 
-          // Fetch staff data with their shifts
+          // Fetch staff data
           const { data: staffData } = await supabase
             .from("staff")
             .select("*")
             .eq("terminal", String(terminal));
 
           if (staffData) {
-            // Convert staff data to include shifts array and calculate hours
-            const staffWithShifts = staffData.map(person => {
-              const shifts = days.map(day => person[day.toLowerCase()] || '');
-              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-              return {
-                ...person,
-                shifts,
-                hours: totalHours
-              };
-            });
-            setStaff(staffWithShifts);
+            setStaff(staffData.map((s) => ({ ...s, hours: 0, shifts: Array(7).fill("") })));
           }
         }
       } catch (error) {
@@ -109,7 +99,7 @@ export default function TerminalRotaPage() {
     return totalHours > 6 ? totalHours - 1 : totalHours;
   };
 
-  const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
+  const handleShiftChange = async (person: Staff, dayIndex: number, value: string) => {
     // Update local state
     const updatedStaff = staff.map(p => {
       if (p.id === person.id) {
@@ -124,41 +114,6 @@ export default function TerminalRotaPage() {
     setHasUnsavedChanges(true);
   };
 
-  const handleSaveChanges = async () => {
-    setIsSaving(true);
-    try {
-      // Update all staff members' shifts
-      const updatePromises = staff.map(person => {
-        const updates = days.reduce((acc, day, index) => ({
-          ...acc,
-          [day.toLowerCase()]: person.shifts[index] || null
-        }), {});
-
-        return supabase
-          .from('staff')
-          .update(updates)
-          .eq('id', person.id);
-      });
-
-      const results = await Promise.all(updatePromises);
-      const hasError = results.some(result => result.error);
-
-      if (hasError) {
-        console.error('Error saving changes:', results.find(r => r.error)?.error);
-        alert('There was an error saving some changes. Please try again.');
-        return;
-      }
-
-      setHasUnsavedChanges(false);
-      alert('Changes saved successfully!');
-    } catch (error) {
-      console.error('Error saving changes:', error);
-      alert('There was an error saving changes. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleAddStaff = async () => {
     if (newStaff.trim()) {
       const { data, error } = await supabase.from("staff").insert([
@@ -168,6 +123,7 @@ export default function TerminalRotaPage() {
       if (!error && data && data.length > 0) {
         setStaff([...staff, { ...data[0], hours: 0, shifts: Array(7).fill("") }]);
         setNewStaff("");
+        setHasUnsavedChanges(true);
       }
     }
   };
@@ -191,6 +147,7 @@ export default function TerminalRotaPage() {
       setStaff(staff.filter(p => p.id !== staffToRemove.id));
       setShowModal(false);
       setStaffToRemove(null);
+      setHasUnsavedChanges(true);
     } catch (error) {
       console.error('Error removing staff:', error);
     }
@@ -204,6 +161,35 @@ export default function TerminalRotaPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
+  };
+
+  const handleSave = async () => {
+    if (!hasUnsavedChanges || !isSaving) return;
+
+    try {
+      setIsSaving(true);
+      for (const person of staff) {
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          const dayColumn = days[dayIndex].toLowerCase();
+          const { error } = await supabase
+            .from('staff')
+            .update({ [dayColumn]: person.shifts[dayIndex] || null })
+            .eq('id', person.id);
+
+          if (error) {
+            console.error(`Error saving shift for ${person.name}:`, error.message);
+            setHasUnsavedChanges(true);
+            return;
+          }
+        }
+      }
+      setHasUnsavedChanges(false);
+      setIsSaving(false);
+      console.log('Successfully saved all shifts');
+    } catch (error) {
+      console.error('Error saving shifts:', error);
+      setHasUnsavedChanges(true);
+    }
   };
 
   if (loading || !isAuthorized) {
@@ -237,7 +223,7 @@ export default function TerminalRotaPage() {
         <div className="p-6 sm:p-8">
           <div className="flex justify-between items-start mb-8 sm:mb-12">
             <div className="flex-1">
-              <h2 className="text-xl sm:text-2xl font-bold text-pink-600 tracking-wide">Dashboard</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-pink-600 tracking-wide">Manager Dashboard</h2>
               {userRole && (
                 <p className="text-sm sm:text-base text-pink-500 mt-2 font-medium">Hello {userRole}</p>
               )}
@@ -255,7 +241,7 @@ export default function TerminalRotaPage() {
           </div>
           <div className="space-y-3">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/manager-dashboard')}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
@@ -263,29 +249,6 @@ export default function TerminalRotaPage() {
               </svg>
               <span className="transition-transform duration-300 group-hover:translate-x-1">Home</span>
             </button>
-
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-pink-600 mb-2 px-4">Select Terminal</h3>
-              <div className="space-y-2">
-                {[2, 3, 4, 5].map((term) => (
-                  <button
-                    key={term}
-                    onClick={() => router.push(`/manager-dashboard/${term}`)}
-                    className={`w-full text-left px-4 sm:px-5 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${
-                      term === terminal
-                        ? 'bg-pink-100 text-pink-700 font-medium'
-                        : 'hover:bg-pink-100/50 text-pink-600'
-                    }`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-                    </svg>
-                    <span className="transition-transform duration-300 group-hover:translate-x-1">Terminal {term}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <button
               onClick={handleSignOut}
               className="w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md"
@@ -304,24 +267,26 @@ export default function TerminalRotaPage() {
           <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <span className="font-semibold text-pink-700 text-base sm:text-lg text-center">Terminal {terminal}</span>
-            <button
-              onClick={handleSaveChanges}
-              disabled={!hasUnsavedChanges || isSaving}
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
-                hasUnsavedChanges
-                  ? 'bg-pink-600 text-white hover:bg-pink-700 hover:shadow-lg'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              {isSaving ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  <span>Saving...</span>
-                </div>
-              ) : (
-                'Save Changes'
-              )}
-            </button>
+            {hasUnsavedChanges && (
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className={`px-4 py-2 rounded-lg font-medium text-white transition-all duration-300 ${
+                  isSaving 
+                    ? 'bg-pink-300 cursor-not-allowed' 
+                    : 'bg-pink-600 hover:bg-pink-700 hover:shadow-lg'
+                }`}
+              >
+                {isSaving ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    <span>Saving...</span>
+                  </div>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">

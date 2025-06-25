@@ -3,6 +3,44 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { use } from "react";
+import Image from 'next/image';
+
+// Helper functions for week navigation
+const getMonday = (date: Date): Date => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  return new Date(d.setDate(diff));
+};
+
+const getSunday = (date: Date): Date => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day; // Get the Sunday of the current week
+  return new Date(d.setDate(diff));
+};
+
+const getWeekNumber = (date: Date): number => {
+  // Get today's date and make it week 43
+  const today = new Date();
+  const todaySunday = getSunday(today);
+  
+  // Calculate which week the given date falls into
+  const dateSunday = getSunday(date);
+  const daysDiff = Math.floor((dateSunday.getTime() - todaySunday.getTime()) / (24 * 60 * 60 * 1000));
+  const weeksDiff = Math.floor(daysDiff / 7);
+  
+  let weekNumber = 44 + weeksDiff;
+  
+  // Handle year transitions (weeks 1-53)
+  if (weekNumber > 53) {
+    weekNumber = ((weekNumber - 1) % 53) + 1;
+  } else if (weekNumber < 1) {
+    weekNumber = 53 + (weekNumber % 53);
+  }
+  
+  return weekNumber;
+};
 
 interface Staff {
   id: string;
@@ -19,18 +57,15 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
 
   const days = useMemo(() => {
-    const today = new Date();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      return {
-        date: date.toISOString().split('T')[0],
-        name: dayNames[date.getDay()]
-      };
-    });
+    return dayNames.map((name, index) => ({
+      date: '', // Not needed for display purposes
+      name: name
+    }));
   }, []);
 
   useEffect(() => {
@@ -52,25 +87,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
         if (profile) {
           setUserRole(profile.role);
           // Fetch staff data for the terminal
-          const { data: staffData } = await supabase
-            .from('staff')
-            .select('*')
-            .eq('terminal', terminal);
-
-          if (staffData) {
-            // Convert staff data to include shifts array and calculate hours
-            const staffWithShifts = staffData.map(person => {
-              const shifts = days.map(day => person[day.name.toLowerCase()] || '');
-              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-              return {
-                ...person,
-                shifts,
-                hours: totalHours
-              };
-            });
-
-            setStaff(staffWithShifts);
-          }
+          await fetchStaffData();
         }
       } catch (error) {
         console.error('Error checking auth:', error);
@@ -81,6 +98,13 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     }
     checkAuth();
   }, [router, terminal, days]);
+
+  // Load data when selected week changes
+  useEffect(() => {
+    if (userRole) {
+      fetchStaffData();
+    }
+  }, [selectedWeek, userRole]);
 
   const calculateHours = (timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;
@@ -105,6 +129,88 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     
     // Subtract 1 hour for breaks if shift is longer than 6 hours
     return totalHours > 6 ? totalHours - 1 : totalHours;
+  };
+
+  const fetchStaffData = async () => {
+    try {
+      // Get selected week's Monday date
+      const monday = getMonday(selectedWeek);
+      const weekStartDate = monday.toISOString().split('T')[0];
+
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('*')
+        .eq('terminal', terminal);
+
+      if (staffData) {
+        // Get published schedules from weekly_schedules table for selected week
+        const { data: weeklySchedules } = await supabase
+          .from("weekly_schedules")
+          .select("*")
+          .eq("week_starting_date", weekStartDate)
+          .in("staff_id", staffData.map(s => parseInt(s.id)));
+
+        // Convert staff data to include shifts array and calculate hours
+        const staffWithShifts = staffData.map(person => {
+          const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
+          
+          const shifts = days.map(day => {
+            const dayLower = day.name.toLowerCase();
+            if (weeklySchedule && weeklySchedule[dayLower]) {
+              // Use published data from weekly_schedules
+              return weeklySchedule[dayLower];
+            }
+            
+            // For current week, fallback to staff table data
+            if (isCurrentWeek()) {
+              return person[dayLower] || '';
+            }
+            
+            return '';
+          });
+          
+          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          return {
+            ...person,
+            shifts,
+            hours: totalHours
+          };
+        });
+
+        setStaff(staffWithShifts);
+      }
+    } catch (error) {
+      console.error('Error fetching staff data:', error);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchStaffData();
+    setRefreshing(false);
+  };
+
+  const handlePreviousWeek = () => {
+    const newWeek = new Date(selectedWeek);
+    newWeek.setDate(selectedWeek.getDate() - 7);
+    setSelectedWeek(newWeek);
+  };
+
+  const handleNextWeek = () => {
+    const newWeek = new Date(selectedWeek);
+    newWeek.setDate(selectedWeek.getDate() + 7);
+    setSelectedWeek(newWeek);
+  };
+
+  const handleCurrentWeek = () => {
+    setSelectedWeek(new Date());
+  };
+
+  const isCurrentWeek = (): boolean => {
+    const today = new Date();
+    const currentMonday = getMonday(today);
+    const selectedMonday = getMonday(selectedWeek);
+    return currentMonday.toDateString() === selectedMonday.toDateString();
   };
 
   const handleSignOut = async () => {
@@ -186,9 +292,84 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
       </div>
 
       <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
-          <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 sm:mb-10 gap-6">
+          {/* Logo */}
+          <div className="flex justify-center lg:justify-start">
+            <Image
+              src="/accessorizelogo2.jpeg"
+              alt="Accessorize Logo"
+              width={200}
+              height={60}
+            />
+          </div>
+
+          {/* Week Navigation */}
+          <div className="bg-white/50 rounded-2xl p-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePreviousWeek}
+                className="p-2 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
+              
+              <div className="text-center">
+                <div className="font-bold text-pink-700 text-lg">
+                  Week {getWeekNumber(selectedWeek)}
+                </div>
+                <div className="text-sm text-pink-600">
+                  {selectedWeek.getFullYear()}
+                </div>
+              </div>
+              
+              <button
+                onClick={handleNextWeek}
+                className="p-2 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+
+              {!isCurrentWeek() && (
+                <button
+                  onClick={handleCurrentWeek}
+                  className="ml-4 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-colors text-xs flex items-center gap-1"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Current
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Terminal and Refresh */}
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="px-4 py-2 bg-pink-600 hover:bg-pink-700 disabled:bg-pink-400 text-white rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 text-sm"
+            >
+              {refreshing ? (
+                <>
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                  </svg>
+                  Refresh
+                </>
+              )}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
           {loading ? (
@@ -216,9 +397,11 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                     <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">
                       {person.hours !== undefined ? (Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)) : '-'}
                     </td>
-                    {days.map((day) => (
+                    {days.map((day, dayIndex) => (
                       <td key={day.name} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                        <div className="text-xs text-gray-700">{person.shifts && person.shifts.includes(day.name.toLowerCase()) ? '✓' : '-'}</div>
+                        <div className="text-xs text-gray-700 font-medium">
+                          {person.shifts[dayIndex] || '-'}
+                        </div>
                       </td>
                     ))}
                   </tr>

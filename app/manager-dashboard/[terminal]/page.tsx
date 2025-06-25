@@ -2,14 +2,53 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Image from 'next/image';
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// Helper functions for week navigation
+const getMonday = (date: Date): Date => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  return new Date(d.setDate(diff));
+};
+
+const getSunday = (date: Date): Date => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day; // Get the Sunday of the current week
+  return new Date(d.setDate(diff));
+};
+
+const getWeekNumber = (date: Date): number => {
+  // Get today's date and make it week 43
+  const today = new Date();
+  const todaySunday = getSunday(today);
+  
+  // Calculate which week the given date falls into
+  const dateSunday = getSunday(date);
+  const daysDiff = Math.floor((dateSunday.getTime() - todaySunday.getTime()) / (24 * 60 * 60 * 1000));
+  const weeksDiff = Math.floor(daysDiff / 7);
+  
+      let weekNumber = 44 + weeksDiff;
+  
+  // Handle year transitions (weeks 1-53)
+  if (weekNumber > 53) {
+    weekNumber = ((weekNumber - 1) % 53) + 1;
+  } else if (weekNumber < 1) {
+    weekNumber = 53 + (weekNumber % 53);
+  }
+  
+  return weekNumber;
+};
 
 interface Staff {
   id: string;
   name: string;
   role: string;
   shifts: string[];
+  publishedShifts: string[];
   hours: number;
 }
 
@@ -28,6 +67,8 @@ export default function TerminalRotaPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
@@ -55,31 +96,8 @@ export default function TerminalRotaPage() {
           // User is authorized
           setIsAuthorized(true);
 
-          // Fetch staff data
-          const { data: staffData } = await supabase
-            .from("staff")
-            .select("*")
-            .eq("terminal", String(terminal));
-
-          if (staffData) {
-            // Convert staff data to include shifts from draft columns (fallback to published if draft is empty)
-            const staffWithShifts = staffData.map(person => {
-              const shifts = days.map(day => {
-                const draftColumn = `draft_${day.toLowerCase()}`;
-                const publishedColumn = day.toLowerCase();
-                // Use draft data if available, otherwise use published data
-                return person[draftColumn] || person[publishedColumn] || '';
-              });
-              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-              return {
-                ...person,
-                shifts,
-                hours: totalHours
-              };
-            });
-
-            setStaff(staffWithShifts);
-          }
+          // Load staff data for the selected week
+          await loadWeekData();
         }
       } catch (error) {
         console.error('Error checking auth:', error);
@@ -90,6 +108,83 @@ export default function TerminalRotaPage() {
     }
     checkAuth();
   }, [router, terminal]);
+
+  // Load data when selected week changes
+  useEffect(() => {
+    if (isAuthorized) {
+      loadWeekData();
+    }
+  }, [selectedWeek, isAuthorized]);
+
+  const loadWeekData = async () => {
+    try {
+      const weekStartDate = getCurrentMondayDate();
+      
+      // Get all staff for this terminal
+      const { data: staffData } = await supabase
+        .from("staff")
+        .select("*")
+        .eq("terminal", String(terminal));
+
+      if (!staffData) return;
+
+      // Get weekly schedules for the selected week
+      const { data: weeklySchedules } = await supabase
+        .from("weekly_schedules")
+        .select("*")
+        .eq("week_starting_date", weekStartDate)
+        .in("staff_id", staffData.map(s => parseInt(s.id)));
+
+      // Convert staff data to include both draft and published shifts
+      const staffWithShifts = staffData.map(person => {
+        const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
+        
+        const shifts = days.map(day => {
+          const dayLower = day.toLowerCase();
+          if (weeklySchedule) {
+            // Use draft data if available, otherwise use published data
+            return weeklySchedule[`draft_${dayLower}`] || weeklySchedule[dayLower] || '';
+          }
+          
+          // For current week, fallback to staff table data
+          if (isCurrentWeek()) {
+            const draftColumn = `draft_${dayLower}`;
+            const publishedColumn = dayLower;
+            return person[draftColumn] || person[publishedColumn] || '';
+          }
+          
+          return '';
+        });
+
+        const publishedShifts = days.map(day => {
+          const dayLower = day.toLowerCase();
+          if (weeklySchedule) {
+            // Use only published data
+            return weeklySchedule[dayLower] || '';
+          }
+          
+          // For current week, fallback to staff table published data
+          if (isCurrentWeek()) {
+            return person[dayLower] || '';
+          }
+          
+          return '';
+        });
+        
+        const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+        return {
+          ...person,
+          shifts,
+          publishedShifts,
+          hours: totalHours
+        };
+      });
+
+      setStaff(staffWithShifts);
+    } catch (error) {
+      console.error('Error loading week data:', error);
+    }
+  };
 
   const calculateHours = (timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;
@@ -140,7 +235,7 @@ export default function TerminalRotaPage() {
       ]).select();
       console.log('Add staff result:', data, 'Error:', error);
       if (!error && data && data.length > 0) {
-        setStaff([...staff, { ...data[0], hours: 0, shifts: Array(7).fill("") }]);
+        setStaff([...staff, { ...data[0], hours: 0, shifts: Array(7).fill(""), publishedShifts: Array(7).fill("") }]);
         setNewStaff("");
       }
     }
@@ -175,29 +270,62 @@ export default function TerminalRotaPage() {
     setStaffToRemove(null);
   };
 
+  const handlePublishClick = () => {
+    setShowPublishModal(true);
+  };
+
+  const confirmPublish = async () => {
+    setShowPublishModal(false);
+    await handlePublishChanges();
+  };
+
+  const cancelPublish = () => {
+    setShowPublishModal(false);
+  };
+
   const handleSaveLocally = async () => {
     setIsSaving(true);
     try {
-      // Save all shifts to draft columns in database
+      const weekStartDate = getCurrentMondayDate();
+      console.log('Saving for week:', weekStartDate);
+      console.log('Is current week:', isCurrentWeek());
+      
       for (const person of staff) {
+        console.log('Saving for person:', person.name, 'ID:', person.id);
         const updates: Record<string, string | null> = {};
         days.forEach((day, index) => {
           const dayColumn = `draft_${day.toLowerCase()}`;
           updates[dayColumn] = person.shifts[index] || null;
         });
+        console.log('Updates for', person.name, ':', updates);
         
-        const { error } = await supabase
-          .from('staff')
-          .update(updates)
-          .eq('id', person.id);
-
-        if (error) throw error;
+        if (isCurrentWeek()) {
+          // For current week, update the staff table
+          const { error } = await supabase
+            .from('staff')
+            .update(updates)
+            .eq('id', person.id);
+          if (error) throw error;
+        } else {
+          // For future weeks, use weekly_schedules table
+          const { error } = await supabase
+            .from('weekly_schedules')
+            .upsert({
+              staff_id: parseInt(person.id),
+              week_starting_date: weekStartDate,
+              ...updates
+            }, {
+              onConflict: 'staff_id,week_starting_date'
+            });
+          if (error) throw error;
+        }
       }
       
       setHasUnsavedChanges(false);
       console.log('Changes saved locally');
     } catch (error) {
       console.error('Error saving locally:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
     } finally {
       setIsSaving(false);
     }
@@ -206,7 +334,8 @@ export default function TerminalRotaPage() {
   const handlePublishChanges = async () => {
     setIsPublishing(true);
     try {
-      // Copy draft changes to published columns
+      const weekStartDate = getCurrentMondayDate();
+      
       for (const person of staff) {
         const updates: Record<string, string | null> = {};
         days.forEach((day, index) => {
@@ -216,21 +345,71 @@ export default function TerminalRotaPage() {
           updates[draftColumn] = person.shifts[index] || null; // Keep draft in sync
         });
         
-        const { error } = await supabase
-          .from('staff')
-          .update(updates)
-          .eq('id', person.id);
-
-        if (error) throw error;
+        if (isCurrentWeek()) {
+          // For current week, update the staff table
+          const { error } = await supabase
+            .from('staff')
+            .update(updates)
+            .eq('id', person.id);
+          if (error) throw error;
+        } else {
+          // For future weeks, use weekly_schedules table
+          const { error } = await supabase
+            .from('weekly_schedules')
+            .upsert({
+              staff_id: parseInt(person.id),
+              week_starting_date: weekStartDate,
+              ...updates
+            }, {
+              onConflict: 'staff_id,week_starting_date'
+            });
+          if (error) throw error;
+        }
       }
+      
+      // Update local publishedShifts state to match current shifts
+      const updatedStaff = staff.map(person => ({
+        ...person,
+        publishedShifts: [...person.shifts]
+      }));
+      setStaff(updatedStaff);
       
       setHasUnsavedChanges(false);
       console.log('Changes published successfully');
     } catch (error) {
       console.error('Error publishing changes:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const getCurrentMondayDate = (): string => {
+    const monday = getMonday(selectedWeek);
+    return monday.toISOString().split('T')[0];
+  };
+
+  const handlePreviousWeek = () => {
+    const newWeek = new Date(selectedWeek);
+    newWeek.setDate(selectedWeek.getDate() - 7);
+    setSelectedWeek(newWeek);
+  };
+
+  const handleNextWeek = () => {
+    const newWeek = new Date(selectedWeek);
+    newWeek.setDate(selectedWeek.getDate() + 7);
+    setSelectedWeek(newWeek);
+  };
+
+  const handleCurrentWeek = () => {
+    setSelectedWeek(new Date());
+  };
+
+  const isCurrentWeek = (): boolean => {
+    const today = new Date();
+    const currentMonday = getMonday(today);
+    const selectedMonday = getMonday(selectedWeek);
+    return currentMonday.toDateString() === selectedMonday.toDateString();
   };
 
   const handleSignOut = async () => {
@@ -312,14 +491,64 @@ export default function TerminalRotaPage() {
       </div>
 
       <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
-          <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <div className="text-center md:text-right">
-            <span className="font-semibold text-pink-700 text-base sm:text-lg">Terminal {terminal}</span>
-            {/* Debug: Show unsaved changes state */}
-            <div className="text-sm text-red-600 font-bold">
-              DEBUG: hasUnsavedChanges = {hasUnsavedChanges ? 'TRUE' : 'FALSE'}
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 sm:mb-10 gap-6">
+          {/* Logo */}
+          <div className="flex justify-center lg:justify-start">
+            <Image
+              src="/accessorizelogo2.jpeg"
+              alt="Accessorize Logo"
+              width={200}
+              height={60}
+            />
+          </div>
+
+          {/* Week Navigation */}
+          <div className="bg-white/50 rounded-2xl p-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePreviousWeek}
+                className="p-2 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
+              
+              <div className="text-center">
+                <div className="font-bold text-pink-700 text-lg">
+                  Week {getWeekNumber(selectedWeek)}
+                </div>
+                <div className="text-sm text-pink-600">
+                  {selectedWeek.getFullYear()}
+                </div>
+              </div>
+              
+              <button
+                onClick={handleNextWeek}
+                className="p-2 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+
+              {!isCurrentWeek() && (
+                <button
+                  onClick={handleCurrentWeek}
+                  className="ml-4 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-colors text-xs flex items-center gap-1"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Current
+                </button>
+              )}
             </div>
+          </div>
+
+          {/* Terminal */}
+          <div className="flex justify-center lg:justify-end">
+            <span className="font-semibold text-pink-700 text-xl">Terminal {terminal}</span>
           </div>
         </div>
         <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
@@ -347,17 +576,29 @@ export default function TerminalRotaPage() {
                       </div>
                     </td>
                     <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">{Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)}</td>
-                    {days.map((day, d) => (
-                      <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                        <input
-                          type="text"
-                          value={person.shifts[d]}
-                          onChange={(e) => handleShiftChange(person, d, e.target.value)}
-                          placeholder="--:--"
-                          className="w-full px-1.5 py-1 rounded-lg border border-pink-200 placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors text-xs"
-                        />
-                      </td>
-                    ))}
+                    {days.map((day, d) => {
+                      const hasChanges = person.shifts[d] !== person.publishedShifts[d];
+                      return (
+                        <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
+                          <input
+                            type="text"
+                            value={person.shifts[d]}
+                            onChange={(e) => handleShiftChange(person, d, e.target.value)}
+                            placeholder=""
+                            className={`px-1.5 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs ${
+                              hasChanges 
+                                ? 'border-orange-400 bg-orange-50 focus:ring-orange-500' 
+                                : 'border-pink-200 bg-white focus:ring-pink-500'
+                            }`}
+                            style={{
+                              width: Math.max(person.shifts[d]?.length * 8 + 16, 80) + 'px',
+                              minWidth: '80px',
+                              maxWidth: '150px'
+                            }}
+                          />
+                        </td>
+                      );
+                    })}
                     <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-10">
                       <button
                         onClick={() => handleRemoveStaff(person)}
@@ -388,6 +629,29 @@ export default function TerminalRotaPage() {
             className="px-6 py-2 sm:py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base font-medium"
           >
             Add Staff
+          </button>
+        </div>
+
+        {/* Persistent Publish Button */}
+        <div className="mt-6 sm:mt-8 flex justify-center">
+          <button
+            onClick={handlePublishClick}
+            disabled={isPublishing}
+            className="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 text-base shadow-lg"
+          >
+            {isPublishing ? (
+              <>
+                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                Publishing...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                </svg>
+                Publish Changes
+              </>
+            )}
           </button>
         </div>
 
@@ -459,42 +723,7 @@ export default function TerminalRotaPage() {
                   )}
                 </button>
                 
-                <button
-                  onClick={handlePublishChanges}
-                  disabled={isPublishing}
-                  className="px-6 py-2.5 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors duration-200"
-                  style={{
-                    backgroundColor: isPublishing ? '#9ca3af' : '#16a34a',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-                    cursor: isPublishing ? 'not-allowed' : 'pointer'
-                  }}
-                  onMouseOver={(e) => {
-                    if (!isPublishing) {
-                      e.currentTarget.style.backgroundColor = '#15803d';
-                      e.currentTarget.style.transform = 'scale(1.05)';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!isPublishing) {
-                      e.currentTarget.style.backgroundColor = '#16a34a';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }
-                  }}
-                >
-                  {isPublishing ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      Publishing...
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
-                      </svg>
-                      Publish Changes
-                    </>
-                  )}
-                </button>
+
               </div>
             </div>
           </div>
@@ -502,7 +731,7 @@ export default function TerminalRotaPage() {
       )}
 
       {showModal && staffToRemove && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full">
             <h3 className="text-xl sm:text-2xl font-bold text-pink-600 mb-4">Remove Staff</h3>
             <p className="text-gray-600 mb-6">Are you sure you want to remove {staffToRemove.name}?</p>
@@ -516,6 +745,42 @@ export default function TerminalRotaPage() {
               <button
                 onClick={cancelRemoveStaff}
                 className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm sm:text-base"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Publish Confirmation Modal */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full">
+            <h3 className="text-xl sm:text-2xl font-bold text-green-600 mb-4">Publish Changes</h3>
+            <div className="mb-6">
+              <p className="text-gray-600 mb-3">Are you sure you want to publish these changes?</p>
+              <p className="text-sm text-gray-500">This will make all current draft changes visible to staff members.</p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={confirmPublish}
+                disabled={isPublishing}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors text-sm sm:text-base flex items-center justify-center gap-2"
+              >
+                {isPublishing ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    Publishing...
+                  </>
+                ) : (
+                  'Publish'
+                )}
+              </button>
+              <button
+                onClick={cancelPublish}
+                disabled={isPublishing}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 transition-colors text-sm sm:text-base"
               >
                 Cancel
               </button>

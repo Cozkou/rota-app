@@ -208,7 +208,7 @@ export default function TerminalRotaPage() {
     try {
       // Copy draft changes to published columns
       for (const person of staff) {
-        const updates: any = {};
+        const updates: Record<string, string | null> = {};
         days.forEach((day, index) => {
           const dayColumn = day.toLowerCase();
           const draftColumn = `draft_${day.toLowerCase()}`;

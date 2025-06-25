@@ -180,7 +180,7 @@ export default function TerminalRotaPage() {
     try {
       // Save all shifts to draft columns in database
       for (const person of staff) {
-        const updates: any = {};
+        const updates: Record<string, string | null> = {};
         days.forEach((day, index) => {
           const dayColumn = `draft_${day.toLowerCase()}`;
           updates[dayColumn] = person.shifts[index] || null;

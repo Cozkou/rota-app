@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import Image from 'next/image';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -118,9 +119,18 @@ export default function DashboardPage() {
       </div>
 
       <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-center">
-        <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center mb-8" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-
-        <div className="max-w-xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
+        <div className="max-w-2xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
+          <div className="text-center py-4">
+            <div className="inline-block rounded-lg p-2">
+              <Image
+                src="/accessorizelogo2.jpeg"
+                alt="Accessorize Logo"
+                width={320}
+                height={128}
+                className="mx-auto"
+              />
+            </div>
+          </div>
           <div className="text-center mb-6 sm:mb-10">
             <span className="font-semibold text-pink-700 text-base sm:text-lg">Select Terminal</span>
           </div>
@@ -129,7 +139,7 @@ export default function DashboardPage() {
               <button
                 key={terminal}
                 onClick={() => router.push(`/dashboard/terminal/${terminal}`)}
-                className="w-full py-4 sm:py-6 rounded-xl bg-white hover:bg-pink-50 text-pink-700 text-xl sm:text-2xl font-bold shadow transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg border border-pink-200"
+                className="w-full py-4 sm:py-6 rounded-xl bg-pink-100 hover:bg-pink-200 text-pink-700 text-xl sm:text-2xl font-bold shadow transition-all duration-300 hover:translate-y-[-2px] hover:shadow-lg border border-pink-200"
               >
                 Terminal {terminal}
               </button>

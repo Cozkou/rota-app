@@ -490,7 +490,7 @@ export default function TerminalRotaPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
+      <div className="max-w-6xl mx-auto bg-white/90 sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 sm:mb-10 gap-6">
           {/* Logo */}
           <div className="flex justify-center lg:justify-start">

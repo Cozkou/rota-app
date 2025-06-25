@@ -25,6 +25,9 @@ export default function TerminalRotaPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [staffToRemove, setStaffToRemove] = useState<Staff | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
@@ -59,7 +62,23 @@ export default function TerminalRotaPage() {
             .eq("terminal", String(terminal));
 
           if (staffData) {
-            setStaff(staffData.map((s) => ({ ...s, hours: 0, shifts: Array(7).fill("") })));
+            // Convert staff data to include shifts from draft columns (fallback to published if draft is empty)
+            const staffWithShifts = staffData.map(person => {
+              const shifts = days.map(day => {
+                const draftColumn = `draft_${day.toLowerCase()}`;
+                const publishedColumn = day.toLowerCase();
+                // Use draft data if available, otherwise use published data
+                return person[draftColumn] || person[publishedColumn] || '';
+              });
+              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+              return {
+                ...person,
+                shifts,
+                hours: totalHours
+              };
+            });
+
+            setStaff(staffWithShifts);
           }
         }
       } catch (error) {
@@ -97,8 +116,9 @@ export default function TerminalRotaPage() {
     return totalHours > 6 ? totalHours - 1 : totalHours;
   };
 
-  const handleShiftChange = async (person: Staff, dayIndex: number, value: string) => {
-    // Update local state
+  const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
+    console.log('handleShiftChange called:', person.name, dayIndex, value);
+    // Update local state only (don't save to database automatically)
     const updatedStaff = staff.map(p => {
       if (p.id === person.id) {
         const newShifts = [...p.shifts];
@@ -109,28 +129,8 @@ export default function TerminalRotaPage() {
       return p;
     });
     setStaff(updatedStaff);
-
-    // Save to database
-    try {
-      const dayColumn = days[dayIndex].toLowerCase();
-      const { error } = await supabase
-        .from('staff')
-        .update({ [dayColumn]: value || null })
-        .eq('id', person.id);
-
-      if (error) {
-        console.error('Error saving shift:', error.message);
-        // Revert the local state change if the save fails
-        setStaff(staff);
-        return;
-      }
-
-      console.log('Successfully saved shift');
-    } catch (error) {
-      console.error('Unexpected error saving shift:', error);
-      // Revert the local state change if the save fails
-      setStaff(staff);
-    }
+    setHasUnsavedChanges(true);
+    console.log('hasUnsavedChanges set to true');
   };
 
   const handleAddStaff = async () => {
@@ -173,6 +173,64 @@ export default function TerminalRotaPage() {
   const cancelRemoveStaff = () => {
     setShowModal(false);
     setStaffToRemove(null);
+  };
+
+  const handleSaveLocally = async () => {
+    setIsSaving(true);
+    try {
+      // Save all shifts to draft columns in database
+      for (const person of staff) {
+        const updates: any = {};
+        days.forEach((day, index) => {
+          const dayColumn = `draft_${day.toLowerCase()}`;
+          updates[dayColumn] = person.shifts[index] || null;
+        });
+        
+        const { error } = await supabase
+          .from('staff')
+          .update(updates)
+          .eq('id', person.id);
+
+        if (error) throw error;
+      }
+      
+      setHasUnsavedChanges(false);
+      console.log('Changes saved locally');
+    } catch (error) {
+      console.error('Error saving locally:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublishChanges = async () => {
+    setIsPublishing(true);
+    try {
+      // Copy draft changes to published columns
+      for (const person of staff) {
+        const updates: any = {};
+        days.forEach((day, index) => {
+          const dayColumn = day.toLowerCase();
+          const draftColumn = `draft_${day.toLowerCase()}`;
+          updates[dayColumn] = person.shifts[index] || null;
+          updates[draftColumn] = person.shifts[index] || null; // Keep draft in sync
+        });
+        
+        const { error } = await supabase
+          .from('staff')
+          .update(updates)
+          .eq('id', person.id);
+
+        if (error) throw error;
+      }
+      
+      setHasUnsavedChanges(false);
+      console.log('Changes published successfully');
+    } catch (error) {
+      console.error('Error publishing changes:', error);
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -256,7 +314,13 @@ export default function TerminalRotaPage() {
       <div className="max-w-6xl mx-auto bg-white/90 rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-8 md:p-12">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 sm:mb-10 gap-4 sm:gap-6">
           <h1 className="playfair text-3xl sm:text-4xl md:text-5xl font-extrabold text-pink-600 tracking-widest drop-shadow-sm text-center md:text-left" style={{ letterSpacing: "0.15em" }}>ACCESSORIZE</h1>
-          <span className="font-semibold text-pink-700 text-base sm:text-lg text-center md:text-right">Terminal {terminal}</span>
+          <div className="text-center md:text-right">
+            <span className="font-semibold text-pink-700 text-base sm:text-lg">Terminal {terminal}</span>
+            {/* Debug: Show unsaved changes state */}
+            <div className="text-sm text-red-600 font-bold">
+              DEBUG: hasUnsavedChanges = {hasUnsavedChanges ? 'TRUE' : 'FALSE'}
+            </div>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-xl sm:rounded-2xl shadow-md">
           {loading ? (
@@ -326,7 +390,116 @@ export default function TerminalRotaPage() {
             Add Staff
           </button>
         </div>
+
+
       </div>
+
+      {/* Floating Notification Bar for Unsaved Changes */}
+      {hasUnsavedChanges && (
+        <div 
+          className="fixed bottom-0 left-0 right-0 text-white border-t-4 border-red-600"
+          style={{
+            background: 'linear-gradient(to right, #f97316, #dc2626)',
+            boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
+            zIndex: 9999
+          }}
+        >
+          <div className="max-w-6xl mx-auto px-4 py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <div 
+                  className="rounded-full p-2 flex-shrink-0"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-bold text-lg">⚠️ Unsaved Changes</p>
+                  <p className="text-sm" style={{ opacity: 0.9 }}>Save locally or publish to make changes visible to staff</p>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleSaveLocally}
+                  disabled={isSaving}
+                  className="px-6 py-2.5 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors duration-200"
+                  style={{
+                    backgroundColor: isSaving ? '#9ca3af' : '#2563eb',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+                    cursor: isSaving ? 'not-allowed' : 'pointer'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!isSaving) {
+                      e.currentTarget.style.backgroundColor = '#1d4ed8';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (!isSaving) {
+                      e.currentTarget.style.backgroundColor = '#2563eb';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }
+                  }}
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                      </svg>
+                      Save Locally
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handlePublishChanges}
+                  disabled={isPublishing}
+                  className="px-6 py-2.5 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors duration-200"
+                  style={{
+                    backgroundColor: isPublishing ? '#9ca3af' : '#16a34a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+                    cursor: isPublishing ? 'not-allowed' : 'pointer'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!isPublishing) {
+                      e.currentTarget.style.backgroundColor = '#15803d';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (!isPublishing) {
+                      e.currentTarget.style.backgroundColor = '#16a34a';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }
+                  }}
+                >
+                  {isPublishing ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                      </svg>
+                      Publish Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && staffToRemove && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">

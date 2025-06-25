@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Image from 'next/image';
@@ -70,53 +70,7 @@ export default function TerminalRotaPage() {
   const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
   const [showPublishModal, setShowPublishModal] = useState(false);
 
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.replace("/login");
-          return;
-        }
-
-        // Fetch user role
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (profile) {
-          setUserRole(profile.role);
-          // Redirect if not a manager
-          if (profile.role !== 'manager') {
-            router.replace("/dashboard");
-            return;
-          }
-          // User is authorized
-          setIsAuthorized(true);
-
-          // Load staff data for the selected week
-          await loadWeekData();
-        }
-      } catch (error) {
-        console.error('Error checking auth:', error);
-        router.replace("/login");
-      } finally {
-        setLoading(false);
-      }
-    }
-    checkAuth();
-  }, [router, terminal]);
-
-  // Load data when selected week changes
-  useEffect(() => {
-    if (isAuthorized) {
-      loadWeekData();
-    }
-  }, [selectedWeek, isAuthorized]);
-
-  const loadWeekData = async () => {
+  const loadWeekData = useCallback(async () => {
     try {
       const weekStartDate = getCurrentMondayDate();
       
@@ -184,7 +138,53 @@ export default function TerminalRotaPage() {
     } catch (error) {
       console.error('Error loading week data:', error);
     }
-  };
+  }, [selectedWeek, terminal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+
+        // Fetch user role
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setUserRole(profile.role);
+          // Redirect if not a manager
+          if (profile.role !== 'manager') {
+            router.replace("/dashboard");
+            return;
+          }
+          // User is authorized
+          setIsAuthorized(true);
+
+          // Load staff data for the selected week
+          await loadWeekData();
+        }
+      } catch (error) {
+        console.error('Error checking auth:', error);
+        router.replace("/login");
+      } finally {
+        setLoading(false);
+      }
+    }
+    checkAuth();
+  }, [router, terminal, loadWeekData]);
+
+  // Load data when selected week changes
+  useEffect(() => {
+    if (isAuthorized) {
+      loadWeekData();
+    }
+  }, [selectedWeek, isAuthorized, loadWeekData]);
 
   const calculateHours = (timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;

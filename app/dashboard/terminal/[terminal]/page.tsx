@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { use } from "react";
 import Image from 'next/image';
@@ -62,7 +62,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
 
   const days = useMemo(() => {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return dayNames.map((name, index) => ({
+    return dayNames.map((name) => ({
       date: '', // Not needed for display purposes
       name: name
     }));
@@ -99,14 +99,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     checkAuth();
   }, [router, terminal, days]);
 
-  // Load data when selected week changes
-  useEffect(() => {
-    if (userRole) {
-      fetchStaffData();
-    }
-  }, [selectedWeek, userRole]);
-
-  const calculateHours = (timeRange: string): number => {
+  const calculateHours = useCallback((timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;
     
     const [start, end] = timeRange.split('-').map(time => time.trim());
@@ -129,9 +122,16 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     
     // Subtract 1 hour for breaks if shift is longer than 6 hours
     return totalHours > 6 ? totalHours - 1 : totalHours;
-  };
+  }, []);
 
-  const fetchStaffData = async () => {
+  const isCurrentWeek = useCallback((): boolean => {
+    const today = new Date();
+    const currentMonday = getMonday(today);
+    const selectedMonday = getMonday(selectedWeek);
+    return currentMonday.toDateString() === selectedMonday.toDateString();
+  }, [selectedWeek]);
+
+  const fetchStaffData = useCallback(async () => {
     try {
       // Get selected week's Monday date
       const monday = getMonday(selectedWeek);
@@ -182,7 +182,14 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     } catch (error) {
       console.error('Error fetching staff data:', error);
     }
-  };
+  }, [selectedWeek, terminal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load data when selected week changes
+  useEffect(() => {
+    if (userRole) {
+      fetchStaffData();
+    }
+  }, [selectedWeek, userRole, fetchStaffData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -204,13 +211,6 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
 
   const handleCurrentWeek = () => {
     setSelectedWeek(new Date());
-  };
-
-  const isCurrentWeek = (): boolean => {
-    const today = new Date();
-    const currentMonday = getMonday(today);
-    const selectedMonday = getMonday(selectedWeek);
-    return currentMonday.toDateString() === selectedMonday.toDateString();
   };
 
   const handleSignOut = async () => {

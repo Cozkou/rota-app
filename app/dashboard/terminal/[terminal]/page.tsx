@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { use } from "react";
 import Image from 'next/image';
@@ -14,20 +14,18 @@ const getSunday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system aligned with workplace
-  // Currently week 43, going to week 44 this Sunday
-  // Week runs Sunday-Saturday
+  // Simple week calculation based on current date
+  // Today is Week 43, tomorrow (Sunday) will be Week 44
   
-  // Define the reference point - when the current system was at week 43
   const today = new Date();
   const currentSunday = getSunday(today);
   const targetSunday = getSunday(date);
   
-  // Calculate difference in weeks between target date and today
+  // Calculate how many weeks different the target is from current week
   const daysDiff = Math.floor((targetSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
   const weeksDiff = Math.round(daysDiff / 7);
   
-  // Current week is 43, calculate target week relative to that
+  // Current week is 43, calculate target week
   let weekNumber = 43 + weeksDiff;
   
   // Handle year transitions (weeks 1-53)
@@ -51,20 +49,43 @@ interface Staff {
 export default function TerminalView({ params }: { params: Promise<{ terminal: string }> }) {
   const router = useRouter();
   const { terminal } = use(params);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [selectedWeek, setSelectedWeek] = useState(new Date()); // Always start with current date
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const days = useMemo(() => {
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return dayNames.map((name) => ({
-      date: '', // Not needed for display purposes
-      name: name
-    }));
-  }, []);
+  const days = useMemo(() => [
+    { name: "Sunday", color: "bg-red-100 text-red-800" },
+    { name: "Monday", color: "bg-blue-100 text-blue-800" },
+    { name: "Tuesday", color: "bg-green-100 text-green-800" },
+    { name: "Wednesday", color: "bg-yellow-100 text-yellow-800" },
+    { name: "Thursday", color: "bg-purple-100 text-purple-800" },
+    { name: "Friday", color: "bg-pink-100 text-pink-800" },
+    { name: "Saturday", color: "bg-orange-100 text-orange-800" }
+  ], []);
+
+  // Always check if we're viewing the current calendar week
+  const isCurrentWeek = useCallback((): boolean => {
+    const today = new Date();
+    const currentSunday = getSunday(today);
+    const selectedSunday = getSunday(selectedWeek);
+    return currentSunday.toDateString() === selectedSunday.toDateString();
+  }, [selectedWeek]);
+
+  // Update selectedWeek to current week every time the page loads
+  useEffect(() => {
+    const currentDate = new Date();
+    const currentSunday = getSunday(currentDate);
+    const selectedSunday = getSunday(selectedWeek);
+    
+    // If we're not viewing the current week, automatically switch to it
+    if (currentSunday.toDateString() !== selectedSunday.toDateString()) {
+      setSelectedWeek(currentDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount, intentionally excluding selectedWeek
 
   useEffect(() => {
     async function checkAuth() {
@@ -131,13 +152,6 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
       return totalHours;
     }
   }, []);
-
-  const isCurrentWeek = useCallback((): boolean => {
-    const today = new Date();
-    const currentSunday = getSunday(today);
-    const selectedSunday = getSunday(selectedWeek);
-    return currentSunday.toDateString() === selectedSunday.toDateString();
-  }, [selectedWeek]);
 
   const fetchStaffData = useCallback(async () => {
     try {

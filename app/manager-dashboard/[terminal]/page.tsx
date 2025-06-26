@@ -16,20 +16,18 @@ const getSunday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system aligned with workplace
-  // Currently week 43, going to week 44 this Sunday
-  // Week runs Sunday-Saturday
+  // Simple week calculation based on current date
+  // Today is Week 43, tomorrow (Sunday) will be Week 44
   
-  // Define the reference point - when the current system was at week 43
   const today = new Date();
   const currentSunday = getSunday(today);
   const targetSunday = getSunday(date);
   
-  // Calculate difference in weeks between target date and today
+  // Calculate how many weeks different the target is from current week
   const daysDiff = Math.floor((targetSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
   const weeksDiff = Math.round(daysDiff / 7);
   
-  // Current week is 43, calculate target week relative to that
+  // Current week is 43, calculate target week
   let weekNumber = 43 + weeksDiff;
   
   // Handle year transitions (weeks 1-53)
@@ -54,7 +52,7 @@ interface Staff {
 export default function TerminalRotaPage() {
   const router = useRouter();
   const params = useParams();
-  const terminal = Number(params.terminal);
+  const terminal = params.terminal as string;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +65,7 @@ export default function TerminalRotaPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
+  const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -908,8 +906,6 @@ export default function TerminalRotaPage() {
     return `${day}-${month}`;
   };
 
-
-
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -996,6 +992,19 @@ export default function TerminalRotaPage() {
     return () => clearInterval(interval);
   }, [selectedWeek, loadWeekData, isCurrentWeek]);
 
+  // Update selectedWeek to current week every time the page loads
+  useEffect(() => {
+    const currentDate = new Date();
+    const currentSunday = getSunday(currentDate);
+    const selectedSunday = getSunday(selectedWeek);
+    
+    // If we're not viewing the current week, automatically switch to it
+    if (currentSunday.toDateString() !== selectedSunday.toDateString()) {
+      setSelectedWeek(currentDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount, intentionally excluding selectedWeek
+
   if (loading || !isAuthorized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-pink-50">
@@ -1048,7 +1057,7 @@ export default function TerminalRotaPage() {
               <button
                 key={t}
                 onClick={() => router.push(`/manager-dashboard/${t}`)}
-                className={`w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${t === terminal ? 'bg-pink-100/50 shadow-md' : ''}`}
+                className={`w-full text-left px-4 sm:px-5 py-3 rounded-xl hover:bg-pink-100/50 text-pink-600 font-medium text-base sm:text-lg transition-all duration-300 flex items-center gap-3 group hover:translate-x-1 hover:shadow-md ${t === Number(terminal) ? 'bg-pink-100/50 shadow-md' : ''}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Image from 'next/image';
@@ -78,12 +78,18 @@ export default function TerminalRotaPage() {
   // Track unsaved changes across all weeks
   const [unsavedWeeks, setUnsavedWeeks] = useState<Map<string, Staff[]>>(new Map());
   
+  // Use ref to access current unsavedWeeks without triggering effects
+  const unsavedWeeksRef = useRef<Map<string, Staff[]>>(new Map());
+  
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   
   // Confetti animation state
   const [showConfetti, setShowConfetti] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState({ width: 0, height: 0 });
+  
+  // Flag to prevent checking for unsaved changes when loading data
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   // Helper functions defined before callbacks that use them
   const getCurrentSundayDate = useCallback((): string => {
@@ -138,7 +144,7 @@ export default function TerminalRotaPage() {
     );
     setHasUnsavedChanges(hasChanges);
     
-    // If there are unsaved changes, add this week to unsavedWeeks
+    // Update unsavedWeeks if there are changes
     if (hasChanges) {
       const weekKey = getCurrentSundayDate();
       setUnsavedWeeks(prev => {
@@ -149,16 +155,18 @@ export default function TerminalRotaPage() {
     }
   }, [staff, getCurrentSundayDate]);
 
-  const loadWeekData = useCallback(async (skipLocalCheck = false) => {
+  const loadWeekData = useCallback(async (skipLocalCheck = false, currentUnsavedWeeks?: Map<string, Staff[]>) => {
     try {
+      setIsLoadingData(true);
       const weekStartDate = getCurrentSundayDate();
       
       // Check if we have locally stored changes for this week first (unless skipped)
-      if (!skipLocalCheck) {
-        const localChanges = unsavedWeeks.get(weekStartDate);
+      if (!skipLocalCheck && currentUnsavedWeeks) {
+        const localChanges = currentUnsavedWeeks.get(weekStartDate);
         if (localChanges) {
           console.log(`Loading locally stored changes for week: ${weekStartDate}`);
           setStaff(localChanges);
+          setIsLoadingData(false);
           return;
         }
       }
@@ -246,21 +254,16 @@ export default function TerminalRotaPage() {
       }
     } catch (error) {
       console.error('Error loading week data:', error);
+    } finally {
+      setIsLoadingData(false);
     }
-  }, [selectedWeek, terminal, unsavedWeeks, getCurrentSundayDate, isCurrentWeek, calculateHours]);
+  }, [selectedWeek, terminal, getCurrentSundayDate, isCurrentWeek, calculateHours]);
 
   // Separate function to load data when week changes (checks for local changes)
   const loadWeekDataWithLocalCheck = useCallback(async () => {
-    const weekStartDate = getCurrentSundayDate();
-    const localChanges = unsavedWeeks.get(weekStartDate);
-    
-    if (localChanges) {
-      console.log(`Loading locally stored changes for week: ${weekStartDate}`);
-      setStaff(localChanges);
-    } else {
-      await loadWeekData(true); // Skip local check since we already checked
-    }
-  }, [getCurrentSundayDate, unsavedWeeks, loadWeekData]);
+    // Use ref to get current unsavedWeeks to avoid dependency
+    await loadWeekData(false, unsavedWeeksRef.current);
+  }, [loadWeekData]); // Removed unsavedWeeks from dependencies to break circular loop
 
   useEffect(() => {
     async function checkAuth() {
@@ -308,10 +311,12 @@ export default function TerminalRotaPage() {
     }
   }, [selectedWeek, isAuthorized, loadWeekDataWithLocalCheck]);
 
-  // Check for unsaved changes after loading data
+  // Check for unsaved changes after loading data - but only when not actively editing
   useEffect(() => {
-    checkForUnsavedChanges();
-  }, [staff, checkForUnsavedChanges]);
+    if (!isLoadingData) {
+      checkForUnsavedChanges();
+    }
+  }, [staff, checkForUnsavedChanges, isLoadingData]);
 
   // Handle window dimensions for confetti
   useEffect(() => {
@@ -324,6 +329,11 @@ export default function TerminalRotaPage() {
 
     return () => window.removeEventListener('resize', updateWindowDimensions);
   }, []);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    unsavedWeeksRef.current = unsavedWeeks;
+  }, [unsavedWeeks]);
 
   const triggerConfetti = () => {
     setShowConfetti(true);
@@ -453,30 +463,22 @@ export default function TerminalRotaPage() {
     }
   };
 
-  const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
-    console.log('handleShiftChange called:', person.name, dayIndex, value);
+  const handleShiftChange = useCallback((person: Staff, dayIndex: number, value: string) => {
     // Update local state only (don't save to database automatically)
-    const updatedStaff = staff.map(p => {
-      if (p.id === person.id) {
-        const newShifts = [...p.shifts];
-        newShifts[dayIndex] = value;
-        const totalHours = newShifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-        return { ...p, shifts: newShifts, hours: totalHours };
-      }
-      return p;
+    setStaff(prevStaff => {
+      return prevStaff.map(p => {
+        if (p.id === person.id) {
+          const newShifts = [...p.shifts];
+          newShifts[dayIndex] = value;
+          const totalHours = newShifts.reduce((sum: number, shift) => sum + calculateHours(shift), 0);
+          return { ...p, shifts: newShifts, hours: totalHours };
+        }
+        return p;
+      });
     });
-    setStaff(updatedStaff);
-    setHasUnsavedChanges(true);
-    console.log('hasUnsavedChanges set to true');
     
-    // Track changes for this week
-    const weekKey = getCurrentSundayDate();
-    setUnsavedWeeks(prev => {
-      const newMap = new Map(prev);
-      newMap.set(weekKey, updatedStaff);
-      return newMap;
-    });
-  };
+    setHasUnsavedChanges(true);
+  }, [calculateHours]);
 
   const handleAddStaff = async () => {
     if (newStaff.trim()) {
@@ -1155,7 +1157,7 @@ export default function TerminalRotaPage() {
                           <div className="flex items-center gap-1 justify-center">
                             <input
                               type="text"
-                              value={person.shifts[d]}
+                              value={person.shifts[d] || ''}
                               onChange={(e) => handleShiftChange(person, d, e.target.value)}
                               placeholder=""
                               className={`px-1 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs text-center ${
@@ -1164,7 +1166,7 @@ export default function TerminalRotaPage() {
                                   : 'border-pink-200 bg-white focus:ring-pink-500'
                               }`}
                               style={{
-                                width: Math.max(person.shifts[d]?.length * 8 + 16, 50) + 'px',
+                                width: Math.max((person.shifts[d] || '').length * 8 + 16, 50) + 'px',
                                 minWidth: '50px'
                               }}
                             />

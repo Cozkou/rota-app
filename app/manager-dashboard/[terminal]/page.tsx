@@ -147,9 +147,11 @@ export default function TerminalRotaPage() {
     // Update unsavedWeeks if there are changes
     if (hasChanges) {
       const weekKey = getCurrentSundayDate();
+      console.log(`Updating unsaved changes for week: ${weekKey}`);
       setUnsavedWeeks(prev => {
         const newMap = new Map(prev);
         newMap.set(weekKey, staff);
+        console.log(`All unsaved weeks:`, Array.from(newMap.keys()));
         return newMap;
       });
     }
@@ -165,11 +167,14 @@ export default function TerminalRotaPage() {
         const localChanges = currentUnsavedWeeks.get(weekStartDate);
         if (localChanges) {
           console.log(`Loading locally stored changes for week: ${weekStartDate}`);
+          console.log(`Available unsaved weeks:`, Array.from(currentUnsavedWeeks.keys()));
           setStaff(localChanges);
           setIsLoadingData(false);
           return;
         }
       }
+      
+      console.log(`Loading fresh data from database for week: ${weekStartDate}`);
       
       // Get all staff for this terminal, try to order by display_order, fallback to id
       const { data: staffData } = await supabase
@@ -837,15 +842,21 @@ export default function TerminalRotaPage() {
     // Save current week's changes before switching
     if (hasUnsavedChanges) {
       const weekKey = getCurrentSundayDate();
+      console.log(`Saving changes for current week before switching: ${weekKey}`);
       setUnsavedWeeks(prev => {
         const newMap = new Map(prev);
         newMap.set(weekKey, staff);
+        console.log(`Unsaved weeks after saving:`, Array.from(newMap.keys()));
         return newMap;
       });
     }
     
     const newWeek = new Date(selectedWeek);
     newWeek.setDate(selectedWeek.getDate() - 7);
+    console.log(`Switching from ${selectedWeek.toISOString().split('T')[0]} to ${newWeek.toISOString().split('T')[0]}`);
+    
+    // Clear current staff data to prevent stale data from showing
+    setStaff([]);
     setSelectedWeek(newWeek);
     setHasUnsavedChanges(false); // Reset for new week
   };
@@ -854,15 +865,21 @@ export default function TerminalRotaPage() {
     // Save current week's changes before switching
     if (hasUnsavedChanges) {
       const weekKey = getCurrentSundayDate();
+      console.log(`Saving changes for current week before switching: ${weekKey}`);
       setUnsavedWeeks(prev => {
         const newMap = new Map(prev);
         newMap.set(weekKey, staff);
+        console.log(`Unsaved weeks after saving:`, Array.from(newMap.keys()));
         return newMap;
       });
     }
     
     const newWeek = new Date(selectedWeek);
     newWeek.setDate(selectedWeek.getDate() + 7);
+    console.log(`Switching from ${selectedWeek.toISOString().split('T')[0]} to ${newWeek.toISOString().split('T')[0]}`);
+    
+    // Clear current staff data to prevent stale data from showing
+    setStaff([]);
     setSelectedWeek(newWeek);
     setHasUnsavedChanges(false); // Reset for new week
   };
@@ -878,6 +895,8 @@ export default function TerminalRotaPage() {
       });
     }
     
+    // Clear current staff data to prevent stale data from showing
+    setStaff([]);
     setSelectedWeek(new Date());
     setHasUnsavedChanges(false); // Reset for new week
   };

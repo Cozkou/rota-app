@@ -85,6 +85,70 @@ export default function TerminalRotaPage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [windowDimensions, setWindowDimensions] = useState({ width: 0, height: 0 });
 
+  // Helper functions defined before callbacks that use them
+  const getCurrentSundayDate = useCallback((): string => {
+    const sunday = getSunday(selectedWeek);
+    return sunday.toISOString().split('T')[0];
+  }, [selectedWeek]);
+
+  const isCurrentWeek = useCallback((): boolean => {
+    const today = new Date();
+    const currentSunday = getSunday(today);
+    const selectedSunday = getSunday(selectedWeek);
+    return currentSunday.toDateString() === selectedSunday.toDateString();
+  }, [selectedWeek]);
+
+  const calculateHours = useCallback((timeRange: string): number => {
+    if (!timeRange || !timeRange.includes('-')) return 0;
+    
+    const [start, end] = timeRange.split('-').map(time => time.trim());
+    if (!start || !end) return 0;
+
+    const [startHour, startMinute] = start.split(':').map(Number);
+    const [endHour, endMinute] = end.split(':').map(Number);
+
+    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) return 0;
+
+    let hours = endHour - startHour;
+    let minutes = endMinute - startMinute;
+
+    if (minutes < 0) {
+      hours -= 1;
+      minutes += 60;
+    }
+
+    const totalHours = hours + minutes / 60;
+    
+    // Apply break rules:
+    // - 6.5 hours: 30 minute break (0.5 hours)
+    // - More than 6 hours: 1 hour break
+    // - 6 hours or less: no break
+    if (totalHours === 6.5) {
+      return totalHours - 0.5;
+    } else if (totalHours > 6) {
+      return totalHours - 1;
+    } else {
+      return totalHours;
+    }
+  }, []);
+
+  const checkForUnsavedChanges = useCallback(() => {
+    const hasChanges = staff.some(person => 
+      person.shifts.some((shift, index) => shift !== person.publishedShifts[index])
+    );
+    setHasUnsavedChanges(hasChanges);
+    
+    // If there are unsaved changes, add this week to unsavedWeeks
+    if (hasChanges) {
+      const weekKey = getCurrentSundayDate();
+      setUnsavedWeeks(prev => {
+        const newMap = new Map(prev);
+        newMap.set(weekKey, staff);
+        return newMap;
+      });
+    }
+  }, [staff, getCurrentSundayDate]);
+
   const loadWeekData = useCallback(async (skipLocalCheck = false) => {
     try {
       const weekStartDate = getCurrentSundayDate();
@@ -131,7 +195,7 @@ export default function TerminalRotaPage() {
             return person[dayLower] || '';
           });
           
-          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          const totalHours = shifts.reduce((sum: number, shift) => sum + calculateHours(shift), 0);
           return {
             ...person,
             shifts,
@@ -169,7 +233,7 @@ export default function TerminalRotaPage() {
             return '';
           });
           
-          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          const totalHours = shifts.reduce((sum: number, shift) => sum + calculateHours(shift), 0);
           return {
             ...person,
             shifts,
@@ -183,7 +247,7 @@ export default function TerminalRotaPage() {
     } catch (error) {
       console.error('Error loading week data:', error);
     }
-  }, [selectedWeek, terminal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedWeek, terminal, unsavedWeeks, getCurrentSundayDate, isCurrentWeek, calculateHours]);
 
   // Separate function to load data when week changes (checks for local changes)
   const loadWeekDataWithLocalCheck = useCallback(async () => {
@@ -196,7 +260,7 @@ export default function TerminalRotaPage() {
     } else {
       await loadWeekData(true); // Skip local check since we already checked
     }
-  }, [selectedWeek, unsavedWeeks, loadWeekData]);
+  }, [getCurrentSundayDate, unsavedWeeks, loadWeekData]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -247,7 +311,7 @@ export default function TerminalRotaPage() {
   // Check for unsaved changes after loading data
   useEffect(() => {
     checkForUnsavedChanges();
-  }, [staff]);
+  }, [staff, checkForUnsavedChanges]);
 
   // Handle window dimensions for confetti
   useEffect(() => {
@@ -260,23 +324,6 @@ export default function TerminalRotaPage() {
 
     return () => window.removeEventListener('resize', updateWindowDimensions);
   }, []);
-
-  const checkForUnsavedChanges = () => {
-    const hasChanges = staff.some(person => 
-      person.shifts.some((shift, index) => shift !== person.publishedShifts[index])
-    );
-    setHasUnsavedChanges(hasChanges);
-    
-    // If there are unsaved changes, add this week to unsavedWeeks
-    if (hasChanges) {
-      const weekKey = getCurrentSundayDate();
-      setUnsavedWeeks(prev => {
-        const newMap = new Map(prev);
-        newMap.set(weekKey, staff);
-        return newMap;
-      });
-    }
-  };
 
   const triggerConfetti = () => {
     setShowConfetti(true);
@@ -344,7 +391,7 @@ export default function TerminalRotaPage() {
 
       if (weeklySchedules) {
         // Group by week
-        const weekGroups = new Map<string, any[]>();
+        const weekGroups = new Map<string, Record<string, string | number>[]>();
         weeklySchedules.forEach(schedule => {
           const weekKey = schedule.week_starting_date;
           if (!weekGroups.has(weekKey)) {
@@ -388,7 +435,7 @@ export default function TerminalRotaPage() {
                 return '';
               });
               
-              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+              const totalHours = shifts.reduce((sum: number, shift) => sum + calculateHours(String(shift)), 0);
               return {
                 ...person,
                 shifts,
@@ -404,50 +451,6 @@ export default function TerminalRotaPage() {
     } catch (error) {
       console.error('Error scanning for unsaved weeks:', error);
     }
-  };
-
-  const calculateHours = (timeRange: string): number => {
-    if (!timeRange || !timeRange.includes('-')) return 0;
-    
-    const [start, end] = timeRange.split('-').map(time => time.trim());
-    if (!start || !end) return 0;
-
-    const [startHour, startMinute] = start.split(':').map(Number);
-    const [endHour, endMinute] = end.split(':').map(Number);
-
-    if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) return 0;
-
-    let hours = endHour - startHour;
-    let minutes = endMinute - startMinute;
-
-    if (minutes < 0) {
-      hours -= 1;
-      minutes += 60;
-    }
-
-    const totalHours = hours + minutes / 60;
-    
-    // Apply break rules:
-    // - 6.5 hours: 30 minute break (0.5 hours)
-    // - More than 6 hours: 1 hour break
-    // - 6 hours or less: no break
-    if (totalHours === 6.5) {
-      return totalHours - 0.5;
-    } else if (totalHours > 6) {
-      return totalHours - 1;
-    } else {
-      return totalHours;
-    }
-  };
-
-  const formatShiftWithDuration = (timeRange: string): string => {
-    if (!timeRange || !timeRange.includes('-')) return timeRange;
-    
-    const hours = calculateHours(timeRange);
-    if (hours === 0) return timeRange;
-    
-    const hoursText = hours % 1 === 0 ? `${hours}h` : `${hours}h`;
-    return `${timeRange} (${hoursText})`;
   };
 
   const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
@@ -481,7 +484,7 @@ export default function TerminalRotaPage() {
       const maxOrder = staff.length > 0 ? Math.max(...staff.map((_, index) => index)) + 1 : 0;
       
       // Try to insert with display_order, fallback without it if column doesn't exist
-      let insertData: any = { 
+      const insertData: Record<string, string | number> = { 
         name: newStaff.trim(), 
         role: newStaffRole.trim() || 'Staff', // Default to 'Staff' if no role provided
         terminal: String(terminal)
@@ -828,11 +831,6 @@ export default function TerminalRotaPage() {
     }
   };
 
-  const getCurrentSundayDate = (): string => {
-    const sunday = getSunday(selectedWeek);
-    return sunday.toISOString().split('T')[0];
-  };
-
   const handlePreviousWeek = () => {
     // Save current week's changes before switching
     if (hasUnsavedChanges) {
@@ -882,13 +880,6 @@ export default function TerminalRotaPage() {
     setHasUnsavedChanges(false); // Reset for new week
   };
 
-  const isCurrentWeek = (): boolean => {
-    const today = new Date();
-    const currentSunday = getSunday(today);
-    const selectedSunday = getSunday(selectedWeek);
-    return currentSunday.toDateString() === selectedSunday.toDateString();
-  };
-
   const getDateForDay = (dayIndex: number): string => {
     const sunday = getSunday(selectedWeek);
     const date = new Date(sunday);
@@ -897,6 +888,21 @@ export default function TerminalRotaPage() {
     const day = date.getDate();
     const month = date.toLocaleString('en-GB', { month: 'short' });
     return `${day}-${month}`;
+  };
+
+  const getCurrentDayIndex = (): number => {
+    // Get current date in BST timezone
+    const now = new Date();
+    const bstOffset = 1; // BST is UTC+1
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const bstTime = new Date(utc + (bstOffset * 3600000));
+    
+    return bstTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  };
+
+  const isCurrentDay = (dayIndex: number): boolean => {
+    if (!isCurrentWeek()) return false;
+    return getCurrentDayIndex() === dayIndex;
   };
 
   // Drag and drop handlers
@@ -1116,10 +1122,17 @@ export default function TerminalRotaPage() {
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
                   {days.map((day, index) => (
-                    <th key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold">
+                    <th key={day} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold ${
+                      isCurrentDay(index) ? 'bg-green-100 border-green-300' : ''
+                    }`}>
                       <div className="text-center">
-                        <div>{day}</div>
-                        <div className="text-xs font-normal text-pink-600">{getDateForDay(index)}</div>
+                        <div className={isCurrentDay(index) ? 'text-green-700 font-bold' : ''}>{day}</div>
+                        <div className={`text-xs font-normal ${
+                          isCurrentDay(index) ? 'text-green-600' : 'text-pink-600'
+                        }`}>{getDateForDay(index)}</div>
+                        {isCurrentDay(index) && (
+                          <div className="text-xs text-green-600 font-semibold">TODAY</div>
+                        )}
                       </div>
                     </th>
                   ))}
@@ -1158,7 +1171,9 @@ export default function TerminalRotaPage() {
                     {days.map((day, d) => {
                       const hasChanges = person.shifts[d] !== person.publishedShifts[d];
                       return (
-                        <td key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3">
+                        <td key={day} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 ${
+                          isCurrentDay(d) ? 'bg-green-50 border-green-200' : ''
+                        }`}>
                           <div className="flex items-center gap-1 justify-center">
                             <input
                               type="text"
@@ -1168,7 +1183,9 @@ export default function TerminalRotaPage() {
                               className={`px-1 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs text-center ${
                                 hasChanges 
                                   ? 'border-orange-400 bg-orange-50 focus:ring-orange-500' 
-                                  : 'border-pink-200 bg-white focus:ring-pink-500'
+                                  : isCurrentDay(d)
+                                    ? 'border-green-300 bg-green-50 focus:ring-green-500'
+                                    : 'border-pink-200 bg-white focus:ring-pink-500'
                               }`}
                               style={{
                                 width: Math.max(person.shifts[d]?.length * 8 + 16, 50) + 'px',
@@ -1176,7 +1193,9 @@ export default function TerminalRotaPage() {
                               }}
                             />
                             {person.shifts[d] && person.shifts[d].includes('-') && (
-                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                              <span className={`text-xs whitespace-nowrap ${
+                                isCurrentDay(d) ? 'text-green-600' : 'text-gray-500'
+                              }`}>
                                 ({(() => {
                                   const hours = calculateHours(person.shifts[d]);
                                   return hours % 1 === 0 ? `${hours}h` : `${Math.round(hours * 2) / 2}h`;

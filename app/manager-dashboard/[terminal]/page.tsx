@@ -16,19 +16,23 @@ const getSunday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Simple week calculation based on current date
-  // Today is Week 43, tomorrow (Sunday) will be Week 44
+  // Workplace week numbering system
+  // Reference: June 26, 2025 (Thursday) is Week 43
+  const referenceDate = new Date('2025-06-26'); // Thursday, June 26, 2025
+  const referenceWeek = 43;
   
-  const today = new Date();
-  const currentSunday = getSunday(today);
+  // Get the Sunday of the reference week (June 22, 2025)
+  const referenceSunday = getSunday(referenceDate);
+  
+  // Get the Sunday of the target date's week
   const targetSunday = getSunday(date);
   
-  // Calculate how many weeks different the target is from current week
-  const daysDiff = Math.floor((targetSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
+  // Calculate how many weeks different the target is from reference week
+  const daysDiff = Math.floor((targetSunday.getTime() - referenceSunday.getTime()) / (24 * 60 * 60 * 1000));
   const weeksDiff = Math.round(daysDiff / 7);
   
-  // Current week is 43, calculate target week
-  let weekNumber = 43 + weeksDiff;
+  // Calculate target week number
+  let weekNumber = referenceWeek + weeksDiff;
   
   // Handle year transitions (weeks 1-53)
   if (weekNumber > 53) {
@@ -65,7 +69,7 @@ export default function TerminalRotaPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState(new Date());
+  const [selectedWeek, setSelectedWeek] = useState(new Date()); // REAL DATE
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -93,7 +97,8 @@ export default function TerminalRotaPage() {
   }, [selectedWeek]);
 
   const isCurrentWeek = useCallback((): boolean => {
-    const today = new Date();
+    const today = new Date(); // REAL DATE
+    
     const currentSunday = getSunday(today);
     const selectedSunday = getSunday(selectedWeek);
     return currentSunday.toDateString() === selectedSunday.toDateString();
@@ -880,20 +885,9 @@ export default function TerminalRotaPage() {
   };
 
   const handleCurrentWeek = () => {
-    // Save current week's changes before switching
-    if (hasUnsavedChanges) {
-      const weekKey = getCurrentSundayDate();
-      setUnsavedWeeks(prev => {
-        const newMap = new Map(prev);
-        newMap.set(weekKey, staff);
-        return newMap;
-      });
-    }
+    const currentDate = new Date(); // REAL DATE
     
-    // Clear current staff data to prevent stale data from showing
-    setStaff([]);
-    setSelectedWeek(new Date());
-    setHasUnsavedChanges(false); // Reset for new week
+    setSelectedWeek(currentDate);
   };
 
   const getDateForDay = (dayIndex: number): string => {
@@ -994,7 +988,8 @@ export default function TerminalRotaPage() {
 
   // Update selectedWeek to current week every time the page loads
   useEffect(() => {
-    const currentDate = new Date();
+    const currentDate = new Date(); // REAL DATE
+    
     const currentSunday = getSunday(currentDate);
     const selectedSunday = getSunday(selectedWeek);
     

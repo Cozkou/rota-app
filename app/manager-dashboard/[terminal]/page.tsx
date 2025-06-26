@@ -14,33 +14,18 @@ const getMonday = (date: Date): Date => {
   return new Date(d.setDate(diff));
 };
 
-const getSunday = (date: Date): Date => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day; // Get the Sunday of the current week
-  return new Date(d.setDate(diff));
-};
-
 const getWeekNumber = (date: Date): number => {
-  // Get today's date and make it week 43
-  const today = new Date();
-  const todaySunday = getSunday(today);
-  
-  // Calculate which week the given date falls into
-  const dateSunday = getSunday(date);
-  const daysDiff = Math.floor((dateSunday.getTime() - todaySunday.getTime()) / (24 * 60 * 60 * 1000));
-  const weeksDiff = Math.floor(daysDiff / 7);
-  
-      let weekNumber = 44 + weeksDiff;
-  
-  // Handle year transitions (weeks 1-53)
-  if (weekNumber > 53) {
-    weekNumber = ((weekNumber - 1) % 53) + 1;
-  } else if (weekNumber < 1) {
-    weekNumber = 53 + (weekNumber % 53);
-  }
-  
-  return weekNumber;
+  // Calculate ISO week number
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  // Set to nearest Thursday: current date + 4 - current day number
+  // Make Sunday's day number 7
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  // Get first day of year
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  // Calculate full weeks to nearest Thursday
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return weekNo;
 };
 
 interface Staff {

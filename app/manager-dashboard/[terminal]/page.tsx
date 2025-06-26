@@ -250,7 +250,7 @@ export default function TerminalRotaPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [selectedWeek, terminal, getCurrentSundayDate, isCurrentWeek, calculateHours]);
+  }, [terminal, getCurrentSundayDate, isCurrentWeek, calculateHours]);
 
   // Separate function to load data when week changes (checks for local changes)
   const loadWeekDataWithLocalCheck = useCallback(async () => {

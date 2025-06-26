@@ -3,13 +3,56 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+interface StaffData {
+  id: string;
+  name: string;
+  sunday?: string | null;
+  monday?: string | null;
+  tuesday?: string | null;
+  wednesday?: string | null;
+  thursday?: string | null;
+  friday?: string | null;
+  saturday?: string | null;
+  draft_sunday?: string | null;
+  draft_monday?: string | null;
+  draft_tuesday?: string | null;
+  draft_wednesday?: string | null;
+  draft_thursday?: string | null;
+  draft_friday?: string | null;
+  draft_saturday?: string | null;
+}
+
+interface WeeklyScheduleData {
+  staff_id: number;
+  week_starting_date: string;
+  sunday?: string | null;
+  monday?: string | null;
+  tuesday?: string | null;
+  wednesday?: string | null;
+  thursday?: string | null;
+  friday?: string | null;
+  saturday?: string | null;
+  draft_sunday?: string | null;
+  draft_monday?: string | null;
+  draft_tuesday?: string | null;
+  draft_wednesday?: string | null;
+  draft_thursday?: string | null;
+  draft_friday?: string | null;
+  draft_saturday?: string | null;
+}
+
+interface WeekSummary {
+  week_starting_date: string;
+  staff_id: number;
+}
+
 export default function MigrationPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{
-    currentWeekData?: any[];
-    nextWeekData?: any[];
-    allWeeksData?: any[];
+    currentWeekData?: StaffData[];
+    nextWeekData?: WeeklyScheduleData[];
+    allWeeksData?: WeekSummary[];
     staffCount?: number;
   } | null>(null);
   const [result, setResult] = useState<{
@@ -41,9 +84,7 @@ export default function MigrationPage() {
     setError(null);
     
     try {
-      const currentSunday = getCurrentSunday();
       const nextSunday = getNextSunday();
-      const currentWeekStart = currentSunday.toISOString().split('T')[0];
       const nextWeekStart = nextSunday.toISOString().split('T')[0];
 
       // Get current staff data
@@ -171,7 +212,7 @@ export default function MigrationPage() {
             </ul>
             
             <div className="mt-4 p-3 bg-yellow-100 rounded text-xs text-yellow-800">
-              <strong>Note:</strong> If there's no next week data, migration will result in empty schedules becoming current (which is normal - manager can then fill them in).
+              <strong>Note:</strong> If there&apos;s no next week data, migration will result in empty schedules becoming current (which is normal - manager can then fill them in).
             </div>
           </div>
         </div>
@@ -232,7 +273,7 @@ export default function MigrationPage() {
           <div className="text-blue-700 space-y-2 text-sm">
             <p><strong>Step 1:</strong> Current week data in staff table gets archived to weekly_schedules</p>
             <p><strong>Step 2:</strong> Next week data from weekly_schedules gets moved to staff table</p>
-            <p><strong>Step 3:</strong> Next week data is removed from weekly_schedules (now it's current)</p>
+            <p><strong>Step 3:</strong> Next week data is removed from weekly_schedules (now it&apos;s current)</p>
             <p><strong>Result:</strong> The system advances one week forward, week numbers update automatically</p>
           </div>
         </div>

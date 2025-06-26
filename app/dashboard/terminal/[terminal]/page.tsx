@@ -86,6 +86,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
       }
     }
     checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, terminal, days]);
 
   const calculateHours = useCallback((timeRange: string): number => {
@@ -201,25 +202,22 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     }
   }, [selectedWeek, terminal, days, calculateHours, isCurrentWeek]);
 
-  // Load data when selected week changes
+  // Load data when selected week changes and check for migration changes
   useEffect(() => {
     if (userRole) {
       fetchStaffData();
+      
+      // Check for migration changes every 30 seconds when on current week
+      const interval = setInterval(() => {
+        if (isCurrentWeek()) {
+          fetchStaffData();
+        }
+      }, 30000);
+
+      return () => clearInterval(interval);
     }
-  }, [selectedWeek, userRole, fetchStaffData]);
-
-  useEffect(() => {
-    fetchStaffData();
-    
-    // Check for migration changes every 30 seconds when on current week
-    const interval = setInterval(() => {
-      if (isCurrentWeek()) {
-        fetchStaffData();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [selectedWeek, terminal, fetchStaffData, isCurrentWeek]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWeek, userRole, isCurrentWeek]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

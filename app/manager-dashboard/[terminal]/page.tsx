@@ -3,31 +3,37 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Image from 'next/image';
+import Confetti from 'react-confetti';
 
 const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // Helper functions for week navigation
-const getMonday = (date: Date): Date => {
+const getSunday = (date: Date): Date => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  const diff = d.getDate() - day; // Sunday is day 0, so subtract current day to get to Sunday
   return new Date(d.setDate(diff));
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system - current week should be 43
+  // Custom week numbering system - current real week should be 43
   // Week advances on Sunday (start of new week)
   
   const today = new Date();
-  const currentMonday = getMonday(today);
-  const dateMonday = getMonday(date);
+  const currentSunday = getSunday(today);
+  const dateSunday = getSunday(date);
   
-  // Calculate difference in weeks between the given date and current week
-  const daysDiff = Math.floor((dateMonday.getTime() - currentMonday.getTime()) / (24 * 60 * 60 * 1000));
-  const weeksDiff = Math.floor(daysDiff / 7);
+  // Calculate difference in weeks between the given date and current real week
+  const daysDiff = Math.floor((dateSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
+  const weeksDiff = Math.round(daysDiff / 7);
   
-  // Current week should be 43, calculate relative to that
+  // Today's week should be 43, so calculate the given date's week relative to that
   let weekNumber = 43 + weeksDiff;
+  
+  // Debug: if we're looking at current week and it shows 42, add 1
+  if (dateSunday.getTime() === currentSunday.getTime() && weekNumber === 42) {
+    weekNumber = 43;
+  }
   
   // Handle year transitions (weeks 1-53)
   if (weekNumber > 53) {
@@ -57,6 +63,7 @@ export default function TerminalRotaPage() {
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [newStaff, setNewStaff] = useState("");
+  const [newStaffRole, setNewStaffRole] = useState("");
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [staffToRemove, setStaffToRemove] = useState<Staff | null>(null);
@@ -65,12 +72,34 @@ export default function TerminalRotaPage() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<Date>(new Date());
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  
+  // Track unsaved changes across all weeks
+  const [unsavedWeeks, setUnsavedWeeks] = useState<Map<string, Staff[]>>(new Map());
+  
+  // Drag and drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  
+  // Confetti animation state
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [windowDimensions, setWindowDimensions] = useState({ width: 0, height: 0 });
 
-  const loadWeekData = useCallback(async () => {
+  const loadWeekData = useCallback(async (skipLocalCheck = false) => {
     try {
-      const weekStartDate = getCurrentMondayDate();
+      const weekStartDate = getCurrentSundayDate();
       
-      // Get all staff for this terminal
+      // Check if we have locally stored changes for this week first (unless skipped)
+      if (!skipLocalCheck) {
+        const localChanges = unsavedWeeks.get(weekStartDate);
+        if (localChanges) {
+          console.log(`Loading locally stored changes for week: ${weekStartDate}`);
+          setStaff(localChanges);
+          return;
+        }
+      }
+      
+      // Get all staff for this terminal, try to order by display_order, fallback to id
       const { data: staffData } = await supabase
         .from("staff")
         .select("*")
@@ -78,9 +107,18 @@ export default function TerminalRotaPage() {
 
       if (!staffData) return;
 
+      // Sort staff by display_order if available, otherwise by id
+      const sortedStaffData = staffData.sort((a, b) => {
+        if (a.display_order !== null && b.display_order !== null) {
+          return a.display_order - b.display_order;
+        }
+        // Fallback to sorting by id if display_order is not available
+        return parseInt(a.id) - parseInt(b.id);
+      });
+
       if (isCurrentWeek()) {
         // Current week: data is in staff table
-        const staffWithShifts = staffData.map(person => {
+        const staffWithShifts = sortedStaffData.map(person => {
           const shifts = days.map(day => {
             const dayLower = day.toLowerCase();
             const draftColumn = `draft_${dayLower}`;
@@ -111,7 +149,7 @@ export default function TerminalRotaPage() {
           .eq("week_starting_date", weekStartDate)
           .in("staff_id", staffData.map(s => parseInt(s.id)));
 
-        const staffWithShifts = staffData.map(person => {
+        const staffWithShifts = sortedStaffData.map(person => {
           const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
           
           const shifts = days.map(day => {
@@ -147,6 +185,19 @@ export default function TerminalRotaPage() {
     }
   }, [selectedWeek, terminal]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Separate function to load data when week changes (checks for local changes)
+  const loadWeekDataWithLocalCheck = useCallback(async () => {
+    const weekStartDate = getCurrentSundayDate();
+    const localChanges = unsavedWeeks.get(weekStartDate);
+    
+    if (localChanges) {
+      console.log(`Loading locally stored changes for week: ${weekStartDate}`);
+      setStaff(localChanges);
+    } else {
+      await loadWeekData(true); // Skip local check since we already checked
+    }
+  }, [selectedWeek, unsavedWeeks, loadWeekData]);
+
   useEffect(() => {
     async function checkAuth() {
       try {
@@ -174,7 +225,7 @@ export default function TerminalRotaPage() {
           setIsAuthorized(true);
 
           // Load staff data for the selected week
-          await loadWeekData();
+          await loadWeekData(true); // Skip local check on initial load
         }
       } catch (error) {
         console.error('Error checking auth:', error);
@@ -189,9 +240,171 @@ export default function TerminalRotaPage() {
   // Load data when selected week changes
   useEffect(() => {
     if (isAuthorized) {
-      loadWeekData();
+      loadWeekDataWithLocalCheck();
     }
-  }, [selectedWeek, isAuthorized, loadWeekData]);
+  }, [selectedWeek, isAuthorized, loadWeekDataWithLocalCheck]);
+
+  // Check for unsaved changes after loading data
+  useEffect(() => {
+    checkForUnsavedChanges();
+  }, [staff]);
+
+  // Handle window dimensions for confetti
+  useEffect(() => {
+    const updateWindowDimensions = () => {
+      setWindowDimensions({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    updateWindowDimensions();
+    window.addEventListener('resize', updateWindowDimensions);
+
+    return () => window.removeEventListener('resize', updateWindowDimensions);
+  }, []);
+
+  const checkForUnsavedChanges = () => {
+    const hasChanges = staff.some(person => 
+      person.shifts.some((shift, index) => shift !== person.publishedShifts[index])
+    );
+    setHasUnsavedChanges(hasChanges);
+    
+    // If there are unsaved changes, add this week to unsavedWeeks
+    if (hasChanges) {
+      const weekKey = getCurrentSundayDate();
+      setUnsavedWeeks(prev => {
+        const newMap = new Map(prev);
+        newMap.set(weekKey, staff);
+        return newMap;
+      });
+    }
+  };
+
+  const triggerConfetti = () => {
+    setShowConfetti(true);
+    // Stop confetti after 3 seconds
+    setTimeout(() => {
+      setShowConfetti(false);
+    }, 3000);
+  };
+
+  const scanForUnsavedWeeks = async (weeksToPublish: Map<string, Staff[]>) => {
+    try {
+      // Get all staff for this terminal
+      const { data: allStaff } = await supabase
+        .from("staff")
+        .select("*")
+        .eq("terminal", String(terminal));
+
+      if (!allStaff) return;
+
+      // Check current week for draft vs published differences
+      const today = new Date();
+      const currentSunday = getSunday(today);
+      const currentWeekKey = currentSunday.toISOString().split('T')[0];
+
+      const currentWeekHasChanges = allStaff.some(person => {
+        return days.some(day => {
+          const dayLower = day.toLowerCase();
+          const draftColumn = `draft_${dayLower}`;
+          const publishedColumn = dayLower;
+          return (person[draftColumn] || '') !== (person[publishedColumn] || '');
+        });
+      });
+
+      if (currentWeekHasChanges && !weeksToPublish.has(currentWeekKey)) {
+        // Load current week data with draft changes
+        const staffWithDraftChanges = allStaff.map(person => {
+          const shifts = days.map(day => {
+            const dayLower = day.toLowerCase();
+            const draftColumn = `draft_${dayLower}`;
+            return person[draftColumn] || person[dayLower] || '';
+          });
+          
+          const publishedShifts = days.map(day => {
+            const dayLower = day.toLowerCase();
+            return person[dayLower] || '';
+          });
+          
+          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          return {
+            ...person,
+            shifts,
+            publishedShifts,
+            hours: totalHours
+          };
+        });
+        
+        weeksToPublish.set(currentWeekKey, staffWithDraftChanges);
+      }
+
+      // Check weekly_schedules for other weeks with draft vs published differences
+      const { data: weeklySchedules } = await supabase
+        .from("weekly_schedules")
+        .select("*")
+        .in("staff_id", allStaff.map(s => parseInt(s.id)));
+
+      if (weeklySchedules) {
+        // Group by week
+        const weekGroups = new Map<string, any[]>();
+        weeklySchedules.forEach(schedule => {
+          const weekKey = schedule.week_starting_date;
+          if (!weekGroups.has(weekKey)) {
+            weekGroups.set(weekKey, []);
+          }
+          weekGroups.get(weekKey)!.push(schedule);
+        });
+
+        // Check each week for draft vs published differences
+        for (const [weekKey, schedules] of weekGroups.entries()) {
+          if (weeksToPublish.has(weekKey)) continue; // Already included
+
+          const weekHasChanges = schedules.some(schedule => {
+            return days.some(day => {
+              const dayLower = day.toLowerCase();
+              const draftColumn = `draft_${dayLower}`;
+              const publishedColumn = dayLower;
+              return (schedule[draftColumn] || '') !== (schedule[publishedColumn] || '');
+            });
+          });
+
+          if (weekHasChanges) {
+            // Build staff array for this week
+            const weekStaff = allStaff.map(person => {
+              const schedule = schedules.find(s => s.staff_id === parseInt(person.id));
+              
+              const shifts = days.map(day => {
+                const dayLower = day.toLowerCase();
+                const draftColumn = `draft_${dayLower}`;
+                if (schedule) {
+                  return schedule[draftColumn] || schedule[dayLower] || '';
+                }
+                return '';
+              });
+
+              const publishedShifts = days.map(day => {
+                const dayLower = day.toLowerCase();
+                if (schedule) {
+                  return schedule[dayLower] || '';
+                }
+                return '';
+              });
+              
+              const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+              return {
+                ...person,
+                shifts,
+                publishedShifts,
+                hours: totalHours
+              };
+            });
+            
+            weeksToPublish.set(weekKey, weekStaff);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error scanning for unsaved weeks:', error);
+    }
+  };
 
   const calculateHours = (timeRange: string): number => {
     if (!timeRange || !timeRange.includes('-')) return 0;
@@ -214,8 +427,27 @@ export default function TerminalRotaPage() {
 
     const totalHours = hours + minutes / 60;
     
-    // Subtract 1 hour for breaks if shift is longer than 6 hours
-    return totalHours > 6 ? totalHours - 1 : totalHours;
+    // Apply break rules:
+    // - 6.5 hours: 30 minute break (0.5 hours)
+    // - More than 6 hours: 1 hour break
+    // - 6 hours or less: no break
+    if (totalHours === 6.5) {
+      return totalHours - 0.5;
+    } else if (totalHours > 6) {
+      return totalHours - 1;
+    } else {
+      return totalHours;
+    }
+  };
+
+  const formatShiftWithDuration = (timeRange: string): string => {
+    if (!timeRange || !timeRange.includes('-')) return timeRange;
+    
+    const hours = calculateHours(timeRange);
+    if (hours === 0) return timeRange;
+    
+    const hoursText = hours % 1 === 0 ? `${hours}h` : `${hours}h`;
+    return `${timeRange} (${hoursText})`;
   };
 
   const handleShiftChange = (person: Staff, dayIndex: number, value: string) => {
@@ -233,17 +465,53 @@ export default function TerminalRotaPage() {
     setStaff(updatedStaff);
     setHasUnsavedChanges(true);
     console.log('hasUnsavedChanges set to true');
+    
+    // Track changes for this week
+    const weekKey = getCurrentSundayDate();
+    setUnsavedWeeks(prev => {
+      const newMap = new Map(prev);
+      newMap.set(weekKey, updatedStaff);
+      return newMap;
+    });
   };
 
   const handleAddStaff = async () => {
     if (newStaff.trim()) {
-      const { data, error } = await supabase.from("staff").insert([
-        { name: newStaff.trim(), terminal: String(terminal) }
-      ]).select();
-      console.log('Add staff result:', data, 'Error:', error);
-      if (!error && data && data.length > 0) {
-        setStaff([...staff, { ...data[0], hours: 0, shifts: Array(7).fill(""), publishedShifts: Array(7).fill("") }]);
-        setNewStaff("");
+      // Get the highest display_order for this terminal
+      const maxOrder = staff.length > 0 ? Math.max(...staff.map((_, index) => index)) + 1 : 0;
+      
+      // Try to insert with display_order, fallback without it if column doesn't exist
+      let insertData: any = { 
+        name: newStaff.trim(), 
+        role: newStaffRole.trim() || 'Staff', // Default to 'Staff' if no role provided
+        terminal: String(terminal)
+      };
+      
+      // Try to add display_order if possible
+      try {
+        insertData.display_order = maxOrder;
+        const { data, error } = await supabase.from("staff").insert([insertData]).select();
+        
+        if (error && error.message?.includes('column "display_order" does not exist')) {
+          // Retry without display_order
+          delete insertData.display_order;
+          const { data: retryData, error: retryError } = await supabase.from("staff").insert([insertData]).select();
+          console.log('Add staff result (without display_order):', retryData, 'Error:', retryError);
+          if (!retryError && retryData && retryData.length > 0) {
+            setStaff([...staff, { ...retryData[0], hours: 0, shifts: Array(7).fill(""), publishedShifts: Array(7).fill("") }]);
+            setNewStaff("");
+            setNewStaffRole("");
+          }
+        } else {
+          console.log('Add staff result:', data, 'Error:', error);
+          if (!error && data && data.length > 0) {
+            setStaff([...staff, { ...data[0], hours: 0, shifts: Array(7).fill(""), publishedShifts: Array(7).fill("") }]);
+            setNewStaff("");
+            setNewStaffRole("");
+          }
+        }
+      } catch (error) {
+        console.error('Error adding staff:', error);
       }
     }
   };
@@ -267,6 +535,9 @@ export default function TerminalRotaPage() {
       setStaff(staff.filter(p => p.id !== staffToRemove.id));
       setShowModal(false);
       setStaffToRemove(null);
+      
+      // Trigger confetti animation
+      triggerConfetti();
     } catch (error) {
       console.error('Error removing staff:', error);
     }
@@ -290,49 +561,170 @@ export default function TerminalRotaPage() {
     setShowPublishModal(false);
   };
 
-  const handleSaveLocally = async () => {
-    setIsSaving(true);
+  const handleClearAllClick = () => {
+    setShowClearModal(true);
+  };
+
+  const confirmClearAll = async () => {
+    setIsClearing(true);
     try {
-      const weekStartDate = getCurrentMondayDate();
-      console.log('Saving for week:', weekStartDate);
+      const weekStartDate = getCurrentSundayDate();
+      console.log('Clearing shifts for week:', weekStartDate);
       console.log('Is current week:', isCurrentWeek());
+      console.log('Staff count:', staff.length);
       
       for (const person of staff) {
-        console.log('Saving for person:', person.name, 'ID:', person.id);
-        const updates: Record<string, string | null> = {};
-        days.forEach((day, index) => {
-          const dayColumn = `draft_${day.toLowerCase()}`;
-          updates[dayColumn] = person.shifts[index] || null;
-        });
-        console.log('Updates for', person.name, ':', updates);
+        console.log(`Clearing shifts for: ${person.name} (ID: ${person.id})`);
         
         if (isCurrentWeek()) {
-          // Current week: save to staff table
+          // Current week: clear from staff table
+          const clearUpdates: Record<string, null> = {};
+          days.forEach((day) => {
+            const dayColumn = day.toLowerCase();
+            const draftColumn = `draft_${day.toLowerCase()}`;
+            clearUpdates[dayColumn] = null; // Clear published
+            clearUpdates[draftColumn] = null; // Clear draft
+          });
+          
           const { error } = await supabase
             .from('staff')
-            .update(updates)
+            .update(clearUpdates)
             .eq('id', person.id);
-          if (error) throw error;
+          
+          if (error) {
+            console.error(`Error clearing staff table for ${person.name}:`, error);
+            throw error;
+          } else {
+            console.log(`Successfully cleared staff table for ${person.name}`);
+          }
         } else {
-          // Future/past week: save to weekly_schedules table
-          const { error } = await supabase
+          // Future/past week: clear from weekly_schedules table
+          console.log(`Deleting from weekly_schedules for staff_id: ${person.id}, week: ${weekStartDate}`);
+          
+          const { data: existingData, error: checkError } = await supabase
             .from('weekly_schedules')
-            .upsert({
-              staff_id: parseInt(person.id),
-              week_starting_date: weekStartDate,
-              ...updates
-            }, {
-              onConflict: 'staff_id,week_starting_date'
-            });
-          if (error) throw error;
+            .select('*')
+            .eq('staff_id', parseInt(person.id))
+            .eq('week_starting_date', weekStartDate);
+          
+          if (checkError) {
+            console.error(`Error checking existing data for ${person.name}:`, checkError);
+          } else {
+            console.log(`Found ${existingData?.length || 0} existing records for ${person.name}`);
+          }
+          
+          const { error: deleteError, count } = await supabase
+            .from('weekly_schedules')
+            .delete({ count: 'exact' })
+            .eq('staff_id', parseInt(person.id))
+            .eq('week_starting_date', weekStartDate);
+          
+          if (deleteError) {
+            console.error(`Error deleting weekly schedule for ${person.name}:`, deleteError);
+          } else {
+            console.log(`Successfully deleted ${count || 0} records for ${person.name}`);
+          }
         }
       }
       
+      // Update local state to reflect cleared shifts
+      const clearedStaff = staff.map(person => ({
+        ...person,
+        shifts: Array(7).fill(''),
+        publishedShifts: Array(7).fill(''),
+        hours: 0
+      }));
+      setStaff(clearedStaff);
+      
       setHasUnsavedChanges(false);
-      console.log('Changes saved locally');
+      setShowClearModal(false);
+      console.log('All shifts cleared successfully');
     } catch (error) {
-      console.error('Error saving locally:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.error('Error clearing shifts:', error);
+      alert('Error clearing shifts. Please check the console for details.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const cancelClearAll = () => {
+    setShowClearModal(false);
+  };
+
+  const handleSaveLocally = async () => {
+    setIsSaving(true);
+    try {
+      console.log('Saving all changes locally...');
+      
+      // Get all weeks to save (current week + any unsaved weeks)
+      const weeksToSave = new Map<string, Staff[]>();
+      
+      // Always include current week if it has changes
+      const currentWeekKey = getCurrentSundayDate();
+      if (hasUnsavedChanges) {
+        weeksToSave.set(currentWeekKey, staff);
+      }
+      
+      // Add any weeks from unsavedWeeks state
+      for (const [weekKey, weekStaff] of unsavedWeeks.entries()) {
+        weeksToSave.set(weekKey, weekStaff);
+      }
+      
+      console.log('Total weeks to save locally:', weeksToSave.size);
+      
+      // Save each week
+      for (const [weekStartDate, weekStaff] of weeksToSave.entries()) {
+        console.log(`Saving week locally: ${weekStartDate}`);
+        
+        // Determine if this week is the current week
+        const today = new Date();
+        const currentSunday = getSunday(today);
+        const weekDate = new Date(weekStartDate);
+        const isThisCurrentWeek = currentSunday.toDateString() === weekDate.toDateString();
+        
+        for (const person of weekStaff) {
+          const updates: Record<string, string | null> = {};
+          days.forEach((day, index) => {
+            const dayColumn = `draft_${day.toLowerCase()}`;
+            updates[dayColumn] = person.shifts[index] || null;
+          });
+          
+          if (isThisCurrentWeek) {
+            // Current week: save to staff table
+            const { error } = await supabase
+              .from('staff')
+              .update(updates)
+              .eq('id', person.id);
+            if (error) {
+              console.error(`Error saving to staff table for ${person.name}:`, error);
+              throw error;
+            }
+          } else {
+            // Future/past week: save to weekly_schedules table
+            const { error } = await supabase
+              .from('weekly_schedules')
+              .upsert({
+                staff_id: parseInt(person.id),
+                week_starting_date: weekStartDate,
+                ...updates
+              }, {
+                onConflict: 'staff_id,week_starting_date'
+              });
+            if (error) {
+              console.error(`Error saving to weekly_schedules for ${person.name}:`, error);
+              throw error;
+            }
+          }
+        }
+        console.log(`Successfully saved week locally: ${weekStartDate}`);
+      }
+      
+      // Don't clear unsaved changes state - keep them for publishing later
+      console.log(`Successfully saved ${weeksToSave.size} week(s) locally`);
+      alert(`Successfully saved ${weeksToSave.size} week(s) locally! Changes are saved as drafts and can be published later.`);
+    } catch (error) {
+      console.error('Error saving data locally:', error);
+      alert('Error saving data locally. Please check the console for details.');
     } finally {
       setIsSaving(false);
     }
@@ -341,82 +733,238 @@ export default function TerminalRotaPage() {
   const handlePublishChanges = async () => {
     setIsPublishing(true);
     try {
-      const weekStartDate = getCurrentMondayDate();
+      console.log('Publishing changes for all weeks with unsaved data...');
       
-      for (const person of staff) {
-        const updates: Record<string, string | null> = {};
-        days.forEach((day, index) => {
-          const dayColumn = day.toLowerCase();
-          const draftColumn = `draft_${day.toLowerCase()}`;
-          updates[dayColumn] = person.shifts[index] || null;
-          updates[draftColumn] = person.shifts[index] || null; // Keep draft in sync
-        });
-        
-        if (isCurrentWeek()) {
-          // Current week: publish to staff table
-          const { error } = await supabase
-            .from('staff')
-            .update(updates)
-            .eq('id', person.id);
-          if (error) throw error;
-        } else {
-          // Future/past week: publish to weekly_schedules table
-          const { error } = await supabase
-            .from('weekly_schedules')
-            .upsert({
-              staff_id: parseInt(person.id),
-              week_starting_date: weekStartDate,
-              ...updates
-            }, {
-              onConflict: 'staff_id,week_starting_date'
-            });
-          if (error) throw error;
-        }
+      // Scan for all weeks with unsaved changes by checking all terminals
+      const weeksToPublish = new Map<string, Staff[]>();
+      
+      // Always include current week if it has changes
+      const currentWeekKey = getCurrentSundayDate();
+      if (hasUnsavedChanges) {
+        weeksToPublish.set(currentWeekKey, staff);
       }
       
-      // Update local publishedShifts state to match current shifts
+      // Add any weeks from unsavedWeeks state (for when user navigated between weeks)
+      for (const [weekKey, weekStaff] of unsavedWeeks.entries()) {
+        weeksToPublish.set(weekKey, weekStaff);
+      }
+      
+      // Additionally, scan for weeks with draft data that differs from published data
+      await scanForUnsavedWeeks(weeksToPublish);
+      
+      console.log('Total weeks to publish:', weeksToPublish.size);
+      
+      // Publish each week
+      for (const [weekStartDate, weekStaff] of weeksToPublish.entries()) {
+        console.log(`Publishing week: ${weekStartDate}`);
+        
+        // Determine if this week is the current week
+        const today = new Date();
+        const currentSunday = getSunday(today);
+        const weekDate = new Date(weekStartDate);
+        const isThisCurrentWeek = currentSunday.toDateString() === weekDate.toDateString();
+        
+        for (const person of weekStaff) {
+          const updates: Record<string, string | null> = {};
+          days.forEach((day, index) => {
+            const dayColumn = day.toLowerCase();
+            const draftColumn = `draft_${day.toLowerCase()}`;
+            updates[dayColumn] = person.shifts[index] || null;
+            updates[draftColumn] = person.shifts[index] || null; // Keep draft in sync
+          });
+          
+          if (isThisCurrentWeek) {
+            // Current week: publish to staff table
+            const { error } = await supabase
+              .from('staff')
+              .update(updates)
+              .eq('id', person.id);
+            if (error) {
+              console.error(`Error publishing to staff table for ${person.name}:`, error);
+              throw error;
+            }
+          } else {
+            // Future/past week: publish to weekly_schedules table
+            const { error } = await supabase
+              .from('weekly_schedules')
+              .upsert({
+                staff_id: parseInt(person.id),
+                week_starting_date: weekStartDate,
+                ...updates
+              }, {
+                onConflict: 'staff_id,week_starting_date'
+              });
+            if (error) {
+              console.error(`Error publishing to weekly_schedules for ${person.name}:`, error);
+              throw error;
+            }
+          }
+        }
+        console.log(`Successfully published week: ${weekStartDate}`);
+      }
+      
+      // Update local publishedShifts state for currently viewed week
       const updatedStaff = staff.map(person => ({
         ...person,
         publishedShifts: [...person.shifts]
       }));
       setStaff(updatedStaff);
       
+      // Clear all unsaved changes
+      setUnsavedWeeks(new Map());
       setHasUnsavedChanges(false);
-      console.log('Changes published successfully');
+      
+      console.log(`Successfully published changes for ${weeksToPublish.size} week(s)`);
+      alert(`Successfully published changes for ${weeksToPublish.size} week(s)!`);
+      
+      // Trigger confetti animation
+      triggerConfetti();
     } catch (error) {
       console.error('Error publishing changes:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
+      alert('Error publishing changes. Please check the console for details.');
     } finally {
       setIsPublishing(false);
     }
   };
 
-  const getCurrentMondayDate = (): string => {
-    const monday = getMonday(selectedWeek);
-    return monday.toISOString().split('T')[0];
+  const getCurrentSundayDate = (): string => {
+    const sunday = getSunday(selectedWeek);
+    return sunday.toISOString().split('T')[0];
   };
 
   const handlePreviousWeek = () => {
+    // Save current week's changes before switching
+    if (hasUnsavedChanges) {
+      const weekKey = getCurrentSundayDate();
+      setUnsavedWeeks(prev => {
+        const newMap = new Map(prev);
+        newMap.set(weekKey, staff);
+        return newMap;
+      });
+    }
+    
     const newWeek = new Date(selectedWeek);
     newWeek.setDate(selectedWeek.getDate() - 7);
     setSelectedWeek(newWeek);
+    setHasUnsavedChanges(false); // Reset for new week
   };
 
   const handleNextWeek = () => {
+    // Save current week's changes before switching
+    if (hasUnsavedChanges) {
+      const weekKey = getCurrentSundayDate();
+      setUnsavedWeeks(prev => {
+        const newMap = new Map(prev);
+        newMap.set(weekKey, staff);
+        return newMap;
+      });
+    }
+    
     const newWeek = new Date(selectedWeek);
     newWeek.setDate(selectedWeek.getDate() + 7);
     setSelectedWeek(newWeek);
+    setHasUnsavedChanges(false); // Reset for new week
   };
 
   const handleCurrentWeek = () => {
+    // Save current week's changes before switching
+    if (hasUnsavedChanges) {
+      const weekKey = getCurrentSundayDate();
+      setUnsavedWeeks(prev => {
+        const newMap = new Map(prev);
+        newMap.set(weekKey, staff);
+        return newMap;
+      });
+    }
+    
     setSelectedWeek(new Date());
+    setHasUnsavedChanges(false); // Reset for new week
   };
 
   const isCurrentWeek = (): boolean => {
     const today = new Date();
-    const currentMonday = getMonday(today);
-    const selectedMonday = getMonday(selectedWeek);
-    return currentMonday.toDateString() === selectedMonday.toDateString();
+    const currentSunday = getSunday(today);
+    const selectedSunday = getSunday(selectedWeek);
+    return currentSunday.toDateString() === selectedSunday.toDateString();
+  };
+
+  const getDateForDay = (dayIndex: number): string => {
+    const sunday = getSunday(selectedWeek);
+    const date = new Date(sunday);
+    date.setDate(sunday.getDate() + dayIndex);
+    
+    const day = date.getDate();
+    const month = date.toLocaleString('en-GB', { month: 'short' });
+    return `${day}-${month}`;
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', '');
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      return;
+    }
+
+    const newStaff = [...staff];
+    const draggedItem = newStaff[draggedIndex];
+    
+    // Remove the dragged item
+    newStaff.splice(draggedIndex, 1);
+    
+    // Insert at the new position
+    newStaff.splice(dropIndex, 0, draggedItem);
+    
+    setStaff(newStaff);
+    setDraggedIndex(null);
+    
+    // Save the new order to the database
+    saveStaffOrder(newStaff);
+  };
+
+  const saveStaffOrder = async (orderedStaff: Staff[]) => {
+    try {
+      // Update the display_order for each staff member
+      const updates = orderedStaff.map((person, index) => ({
+        id: person.id,
+        display_order: index
+      }));
+
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('staff')
+          .update({ display_order: update.display_order })
+          .eq('id', update.id);
+        
+        if (error) {
+          console.error('Error updating staff order:', error);
+          // If the column doesn't exist, we'll just skip reordering for now
+          if (error.message?.includes('column "display_order" does not exist')) {
+            console.log('Display order column does not exist. Please add it manually in Supabase dashboard.');
+            console.log('SQL to run: ALTER TABLE staff ADD COLUMN display_order INTEGER;');
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error saving staff order:', error);
+    }
   };
 
   const handleSignOut = async () => {
@@ -567,42 +1115,75 @@ export default function TerminalRotaPage() {
                 <tr className="bg-pink-200 text-pink-700 text-sm sm:text-base">
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
-                  {days.map((day) => (
-                    <th key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day}</th>
+                  {days.map((day, index) => (
+                    <th key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold">
+                      <div className="text-center">
+                        <div>{day}</div>
+                        <div className="text-xs font-normal text-pink-600">{getDateForDay(index)}</div>
+                      </div>
+                    </th>
                   ))}
                   <th className="border-b border-pink-100 w-10"></th>
                 </tr>
               </thead>
               <tbody>
-                {staff.map((person) => (
-                  <tr key={person.id} className="hover:bg-pink-50/50">
+                {staff.map((person, index) => (
+                  <tr 
+                    key={person.id} 
+                    className={`cursor-move ${draggedIndex === index ? 'opacity-50' : ''} ${
+                      index % 2 === 0 
+                        ? 'bg-white' 
+                        : 'bg-pink-50'
+                    }`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={handleDragOver}
+                    onDragEnd={handleDragEnd}
+                    onDrop={(e) => handleDrop(e, index)}
+                  >
                     <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                      <div>
-                        <div>{person.name}</div>
-                        <div className="text-xs text-gray-500">{person.role}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div>{person.name}</div>
+                          <div className="text-xs text-gray-500">{person.role}</div>
+                        </div>
                       </div>
                     </td>
                     <td className="border-b border-pink-100 px-1 py-2 sm:py-3 w-14 text-center">{Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)}</td>
                     {days.map((day, d) => {
                       const hasChanges = person.shifts[d] !== person.publishedShifts[d];
                       return (
-                        <td key={day} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                          <input
-                            type="text"
-                            value={person.shifts[d]}
-                            onChange={(e) => handleShiftChange(person, d, e.target.value)}
-                            placeholder=""
-                            className={`px-1.5 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs ${
-                              hasChanges 
-                                ? 'border-orange-400 bg-orange-50 focus:ring-orange-500' 
-                                : 'border-pink-200 bg-white focus:ring-pink-500'
-                            }`}
-                            style={{
-                              width: Math.max(person.shifts[d]?.length * 8 + 16, 80) + 'px',
-                              minWidth: '80px',
-                              maxWidth: '150px'
-                            }}
-                          />
+                        <td key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3">
+                          <div className="flex items-center gap-1 justify-center">
+                            <input
+                              type="text"
+                              value={person.shifts[d]}
+                              onChange={(e) => handleShiftChange(person, d, e.target.value)}
+                              placeholder=""
+                              className={`px-1 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs text-center ${
+                                hasChanges 
+                                  ? 'border-orange-400 bg-orange-50 focus:ring-orange-500' 
+                                  : 'border-pink-200 bg-white focus:ring-pink-500'
+                              }`}
+                              style={{
+                                width: Math.max(person.shifts[d]?.length * 8 + 16, 50) + 'px',
+                                minWidth: '50px'
+                              }}
+                            />
+                            {person.shifts[d] && person.shifts[d].includes('-') && (
+                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                                ({(() => {
+                                  const hours = calculateHours(person.shifts[d]);
+                                  return hours % 1 === 0 ? `${hours}h` : `${Math.round(hours * 2) / 2}h`;
+                                })()})
+                              </span>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
@@ -629,7 +1210,14 @@ export default function TerminalRotaPage() {
             value={newStaff}
             onChange={(e) => setNewStaff(e.target.value)}
             placeholder="Enter staff name"
-            className="flex-1 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
+            className="flex-1 sm:flex-none sm:w-48 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
+          />
+          <input
+            type="text"
+            value={newStaffRole}
+            onChange={(e) => setNewStaffRole(e.target.value)}
+            placeholder="Enter role"
+            className="flex-1 sm:flex-none sm:w-40 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
           />
           <button
             onClick={handleAddStaff}
@@ -639,8 +1227,28 @@ export default function TerminalRotaPage() {
           </button>
         </div>
 
-        {/* Persistent Publish Button */}
-        <div className="mt-6 sm:mt-8 flex justify-center">
+        {/* Action Buttons */}
+        <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-center gap-4">
+          <button
+            onClick={handleSaveLocally}
+            disabled={isSaving}
+            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 text-base shadow-lg"
+          >
+            {isSaving ? (
+              <>
+                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                </svg>
+                Save Locally
+              </>
+            )}
+          </button>
+
           <button
             onClick={handlePublishClick}
             disabled={isPublishing}
@@ -656,7 +1264,29 @@ export default function TerminalRotaPage() {
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
                 </svg>
-                Publish Changes
+                {unsavedWeeks.size > 0 || hasUnsavedChanges ? 
+                  `Publish Changes (${unsavedWeeks.size + (hasUnsavedChanges && !unsavedWeeks.has(getCurrentSundayDate()) ? 1 : 0)} week${unsavedWeeks.size + (hasUnsavedChanges && !unsavedWeeks.has(getCurrentSundayDate()) ? 1 : 0) === 1 ? '' : 's'})` 
+                  : 'Publish Changes'}
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={handleClearAllClick}
+            disabled={isClearing}
+            className="px-8 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 text-base shadow-lg"
+          >
+            {isClearing ? (
+              <>
+                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                Clearing...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                </svg>
+                Clear All Shifts
               </>
             )}
           </button>
@@ -665,77 +1295,7 @@ export default function TerminalRotaPage() {
 
       </div>
 
-      {/* Floating Notification Bar for Unsaved Changes */}
-      {hasUnsavedChanges && (
-        <div 
-          className="fixed bottom-0 left-0 right-0 text-white border-t-4 border-red-600"
-          style={{
-            background: 'linear-gradient(to right, #f97316, #dc2626)',
-            boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
-            zIndex: 9999
-          }}
-        >
-          <div className="max-w-6xl mx-auto px-4 py-4">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3 text-center sm:text-left">
-                <div 
-                  className="rounded-full p-2 flex-shrink-0"
-                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="font-bold text-lg">⚠️ Unsaved Changes</p>
-                  <p className="text-sm" style={{ opacity: 0.9 }}>Save locally or publish to make changes visible to staff</p>
-                </div>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={handleSaveLocally}
-                  disabled={isSaving}
-                  className="px-6 py-2.5 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-colors duration-200"
-                  style={{
-                    backgroundColor: isSaving ? '#9ca3af' : '#2563eb',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-                    cursor: isSaving ? 'not-allowed' : 'pointer'
-                  }}
-                  onMouseOver={(e) => {
-                    if (!isSaving) {
-                      e.currentTarget.style.backgroundColor = '#1d4ed8';
-                      e.currentTarget.style.transform = 'scale(1.05)';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!isSaving) {
-                      e.currentTarget.style.backgroundColor = '#2563eb';
-                      e.currentTarget.style.transform = 'scale(1)';
-                    }
-                  }}
-                >
-                  {isSaving ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
-                      </svg>
-                      Save Locally
-                    </>
-                  )}
-                </button>
-                
 
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showModal && staffToRemove && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -767,7 +1327,9 @@ export default function TerminalRotaPage() {
             <h3 className="text-xl sm:text-2xl font-bold text-green-600 mb-4">Publish Changes</h3>
             <div className="mb-6">
               <p className="text-gray-600 mb-3">Are you sure you want to publish these changes?</p>
-              <p className="text-sm text-gray-500">This will make all current draft changes visible to staff members.</p>
+              <p className="text-sm text-gray-500">
+                This will publish changes for {unsavedWeeks.size + (hasUnsavedChanges && !unsavedWeeks.has(getCurrentSundayDate()) ? 1 : 0)} week{unsavedWeeks.size + (hasUnsavedChanges && !unsavedWeeks.has(getCurrentSundayDate()) ? 1 : 0) === 1 ? '' : 's'} and make them visible to staff members.
+              </p>
             </div>
             <div className="flex gap-4">
               <button
@@ -794,6 +1356,61 @@ export default function TerminalRotaPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Clear All Confirmation Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full">
+            <h3 className="text-xl sm:text-2xl font-bold text-red-600 mb-4">Clear All Shifts</h3>
+            <div className="mb-6">
+              <p className="text-gray-600 mb-3">⚠️ Are you sure you want to clear ALL shifts for this week?</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-700 font-medium mb-1">This action will:</p>
+                <ul className="text-sm text-red-600 list-disc list-inside space-y-1">
+                  <li>Clear all draft (unsaved) shifts</li>
+                  <li>Clear all published shifts</li>
+                  <li>Remove all shift data from the database</li>
+                </ul>
+                <p className="text-sm text-red-700 font-medium mt-2">This cannot be undone!</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={confirmClearAll}
+                disabled={isClearing}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg transition-colors text-sm sm:text-base flex items-center justify-center gap-2"
+              >
+                {isClearing ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    Clearing...
+                  </>
+                ) : (
+                  'Clear All'
+                )}
+              </button>
+              <button
+                onClick={cancelClearAll}
+                disabled={isClearing}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 transition-colors text-sm sm:text-base"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confetti Animation */}
+      {showConfetti && (
+        <Confetti
+          width={windowDimensions.width}
+          height={windowDimensions.height}
+          recycle={false}
+          numberOfPieces={200}
+          colors={['#ec4899', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6']}
+        />
       )}
     </div>
   );

@@ -6,27 +6,32 @@ import { use } from "react";
 import Image from 'next/image';
 
 // Helper functions for week navigation
-const getMonday = (date: Date): Date => {
+const getSunday = (date: Date): Date => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  const diff = d.getDate() - day; // Sunday is day 0, so subtract current day to get to Sunday
   return new Date(d.setDate(diff));
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system - current week should be 43
+  // Custom week numbering system - current real week should be 43
   // Week advances on Sunday (start of new week)
   
   const today = new Date();
-  const currentMonday = getMonday(today);
-  const dateMonday = getMonday(date);
+  const currentSunday = getSunday(today);
+  const dateSunday = getSunday(date);
   
-  // Calculate difference in weeks between the given date and current week
-  const daysDiff = Math.floor((dateMonday.getTime() - currentMonday.getTime()) / (24 * 60 * 60 * 1000));
-  const weeksDiff = Math.floor(daysDiff / 7);
+  // Calculate difference in weeks between the given date and current real week
+  const daysDiff = Math.floor((dateSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
+  const weeksDiff = Math.round(daysDiff / 7);
   
-  // Current week should be 43, calculate relative to that
+  // Today's week should be 43, so calculate the given date's week relative to that
   let weekNumber = 43 + weeksDiff;
+  
+  // Debug: if we're looking at current week and it shows 42, add 1
+  if (dateSunday.getTime() === currentSunday.getTime() && weekNumber === 42) {
+    weekNumber = 43;
+  }
   
   // Handle year transitions (weeks 1-53)
   if (weekNumber > 53) {
@@ -116,15 +121,24 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
 
     const totalHours = hours + minutes / 60;
     
-    // Subtract 1 hour for breaks if shift is longer than 6 hours
-    return totalHours > 6 ? totalHours - 1 : totalHours;
+    // Apply break rules:
+    // - 6.5 hours: 30 minute break (0.5 hours)
+    // - More than 6 hours: 1 hour break
+    // - 6 hours or less: no break
+    if (totalHours === 6.5) {
+      return totalHours - 0.5;
+    } else if (totalHours > 6) {
+      return totalHours - 1;
+    } else {
+      return totalHours;
+    }
   }, []);
 
   const isCurrentWeek = useCallback((): boolean => {
     const today = new Date();
-    const currentMonday = getMonday(today);
-    const selectedMonday = getMonday(selectedWeek);
-    return currentMonday.toDateString() === selectedMonday.toDateString();
+    const currentSunday = getSunday(today);
+    const selectedSunday = getSunday(selectedWeek);
+    return currentSunday.toDateString() === selectedSunday.toDateString();
   }, [selectedWeek]);
 
   const fetchStaffData = useCallback(async () => {
@@ -135,9 +149,18 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
         .eq('terminal', terminal);
 
       if (staffData) {
+        // Sort staff by display_order if available, otherwise by id
+        const sortedStaffData = staffData.sort((a, b) => {
+          if (a.display_order !== null && b.display_order !== null) {
+            return a.display_order - b.display_order;
+          }
+          // Fallback to sorting by id if display_order is not available
+          return parseInt(a.id) - parseInt(b.id);
+        });
+
         if (isCurrentWeek()) {
           // Current week: data is in staff table
-          const staffWithShifts = staffData.map(person => {
+          const staffWithShifts = sortedStaffData.map(person => {
             const shifts = days.map(day => {
               const dayLower = day.name.toLowerCase();
               return person[dayLower] || '';
@@ -154,8 +177,8 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
           setStaff(staffWithShifts);
         } else {
           // Past or future week: data is in weekly_schedules table
-          const monday = getMonday(selectedWeek);
-          const weekStartDate = monday.toISOString().split('T')[0];
+          const sunday = getSunday(selectedWeek);
+          const weekStartDate = sunday.toISOString().split('T')[0];
 
           const { data: weeklySchedules } = await supabase
             .from("weekly_schedules")
@@ -163,7 +186,7 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
             .eq("week_starting_date", weekStartDate)
             .in("staff_id", staffData.map(s => parseInt(s.id)));
 
-          const staffWithShifts = staffData.map(person => {
+          const staffWithShifts = sortedStaffData.map(person => {
             const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
             
             const shifts = days.map(day => {
@@ -218,6 +241,16 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
 
   const handleCurrentWeek = () => {
     setSelectedWeek(new Date());
+  };
+
+  const getDateForDay = (dayIndex: number): string => {
+    const sunday = getSunday(selectedWeek);
+    const date = new Date(sunday);
+    date.setDate(sunday.getDate() + dayIndex);
+    
+    const day = date.getDate();
+    const month = date.toLocaleString('en-GB', { month: 'short' });
+    return `${day}-${month}`;
   };
 
   const handleSignOut = async () => {
@@ -387,14 +420,23 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                 <tr className="bg-pink-200 text-pink-700 text-sm sm:text-base">
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
-                  {days.map((day) => (
-                    <th key={day.name} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">{day.name}</th>
+                  {days.map((day, index) => (
+                    <th key={day.name} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold">
+                      <div className="text-center">
+                        <div>{day.name}</div>
+                        <div className="text-xs font-normal text-pink-600">{getDateForDay(index)}</div>
+                      </div>
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {staff.map((person) => (
-                  <tr key={person.id} className="hover:bg-pink-50/50">
+                {staff.map((person, index) => (
+                  <tr key={person.id} className={`${
+                    index % 2 === 0 
+                      ? 'bg-white' 
+                      : 'bg-pink-50'
+                  }`}>
                     <td className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
                       <div>
                         <div>{person.name}</div>
@@ -405,9 +447,19 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                       {person.hours !== undefined ? (Number.isInteger(person.hours) ? person.hours : person.hours.toFixed(1)) : '-'}
                     </td>
                     {days.map((day, dayIndex) => (
-                      <td key={day.name} className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3">
-                        <div className="text-xs text-gray-700 font-medium">
-                          {person.shifts[dayIndex] || '-'}
+                      <td key={day.name} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3">
+                        <div className="text-xs text-gray-700 font-medium text-center">
+                          <div className="flex items-center gap-1 justify-center">
+                            <span>{person.shifts[dayIndex] || '-'}</span>
+                            {person.shifts[dayIndex] && person.shifts[dayIndex].includes('-') && (
+                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                                ({(() => {
+                                  const hours = calculateHours(person.shifts[dayIndex]);
+                                  return hours % 1 === 0 ? `${hours}h` : `${Math.round(hours * 2) / 2}h`;
+                                })()})
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                     ))}

@@ -20,15 +20,15 @@ serve(async (req) => {
 
     console.log('Starting weekly migration...')
 
-    // Get current Monday date
+    // Get current Sunday date (week starts on Sunday)
     const today = new Date()
-    const currentMonday = getMonday(today)
-    const currentWeekStart = currentMonday.toISOString().split('T')[0]
+    const currentSunday = getSunday(today)
+    const currentWeekStart = currentSunday.toISOString().split('T')[0]
 
-    // Get next Monday date (the week that should become current)
-    const nextMonday = new Date(currentMonday)
-    nextMonday.setDate(currentMonday.getDate() + 7)
-    const nextWeekStart = nextMonday.toISOString().split('T')[0]
+    // Get next Sunday date (the week that should become current)
+    const nextSunday = new Date(currentSunday)
+    nextSunday.setDate(currentSunday.getDate() + 7)
+    const nextWeekStart = nextSunday.toISOString().split('T')[0]
 
     console.log('Current week start:', currentWeekStart)
     console.log('Next week start (becoming current):', nextWeekStart)
@@ -169,9 +169,9 @@ serve(async (req) => {
   }
 })
 
-function getMonday(date: Date): Date {
+function getSunday(date: Date): Date {
   const d = new Date(date)
   const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1) // adjust when day is sunday
+  const diff = d.getDate() - day // Sunday is day 0, so subtract current day to get to Sunday
   return new Date(d.setDate(diff))
 } 

@@ -14,33 +14,21 @@ const getSunday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system - current real week should be 43
-  // Week advances on Sunday (start of new week)
+  // Calculate ISO week number (weeks 1-53)
+  const d = new Date(date.getTime());
+  d.setHours(0, 0, 0, 0);
   
-  const today = new Date();
-  const currentSunday = getSunday(today);
-  const dateSunday = getSunday(date);
+  // Set to nearest Thursday: current date + 4 - current day number
+  // Make Sunday's day number 7
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
   
-  // Calculate difference in weeks between the given date and current real week
-  const daysDiff = Math.floor((dateSunday.getTime() - currentSunday.getTime()) / (24 * 60 * 60 * 1000));
-  const weeksDiff = Math.round(daysDiff / 7);
+  // Get first day of year
+  const yearStart = new Date(d.getFullYear(), 0, 1);
   
-  // Today's week should be 43, so calculate the given date's week relative to that
-  let weekNumber = 43 + weeksDiff;
+  // Calculate full weeks to nearest Thursday
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   
-  // Debug: if we're looking at current week and it shows 42, add 1
-  if (dateSunday.getTime() === currentSunday.getTime() && weekNumber === 42) {
-    weekNumber = 43;
-  }
-  
-  // Handle year transitions (weeks 1-53)
-  if (weekNumber > 53) {
-    weekNumber = ((weekNumber - 1) % 53) + 1;
-  } else if (weekNumber < 1) {
-    weekNumber = 53 + (weekNumber % 53);
-  }
-  
-  return weekNumber;
+  return weekNo;
 };
 
 interface Staff {
@@ -219,6 +207,19 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
       fetchStaffData();
     }
   }, [selectedWeek, userRole, fetchStaffData]);
+
+  useEffect(() => {
+    fetchStaffData();
+    
+    // Check for migration changes every 30 seconds when on current week
+    const interval = setInterval(() => {
+      if (isCurrentWeek()) {
+        fetchStaffData();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [selectedWeek, terminal, fetchStaffData, isCurrentWeek]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

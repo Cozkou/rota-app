@@ -92,6 +92,8 @@ serve(async (req) => {
       throw new Error(`Error fetching next week data: ${nextWeekError.message}`)
     }
 
+    console.log(`Found ${nextWeekData?.length || 0} records for next week (${nextWeekStart})`)
+
     // Update staff table with next week's data (or clear if no data exists)
     for (const staff of allStaff) {
       const nextWeekStaff = nextWeekData?.find(nw => nw.staff_id === parseInt(staff.id))
@@ -122,19 +124,25 @@ serve(async (req) => {
 
       if (updateError) {
         console.error(`Error updating staff ${staff.id}:`, updateError)
+        throw new Error(`Failed to update staff ${staff.id}: ${updateError.message}`)
       }
     }
 
-    // Step 3: Remove next week's data from weekly_schedules (it's now current)
-    console.log('Step 3: Cleaning up weekly_schedules...')
-    
-    const { error: deleteError } = await supabase
-      .from('weekly_schedules')
-      .delete()
-      .eq('week_starting_date', nextWeekStart)
+    // Step 3: Remove next week's data from weekly_schedules ONLY if it existed
+    if (nextWeekData && nextWeekData.length > 0) {
+      console.log('Step 3: Cleaning up weekly_schedules...')
+      
+      const { error: deleteError } = await supabase
+        .from('weekly_schedules')
+        .delete()
+        .eq('week_starting_date', nextWeekStart)
 
-    if (deleteError) {
-      console.error('Error deleting next week data from weekly_schedules:', deleteError)
+      if (deleteError) {
+        console.error('Error deleting next week data from weekly_schedules:', deleteError)
+        throw new Error(`Failed to clean up weekly_schedules: ${deleteError.message}`)
+      }
+    } else {
+      console.log('Step 3: No next week data to clean up - migration promoted empty schedule')
     }
 
     console.log('Weekly migration completed successfully!')

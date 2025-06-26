@@ -15,16 +15,18 @@ const getMonday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Custom week numbering system - current week is 43
+  // Custom week numbering system - current week should be 43
+  // Week advances on Sunday (start of new week)
+  
   const today = new Date();
-  const todayMonday = getMonday(today);
+  const currentMonday = getMonday(today);
   const dateMonday = getMonday(date);
   
-  // Calculate difference in weeks between the given date and today
-  const daysDiff = Math.floor((dateMonday.getTime() - todayMonday.getTime()) / (24 * 60 * 60 * 1000));
+  // Calculate difference in weeks between the given date and current week
+  const daysDiff = Math.floor((dateMonday.getTime() - currentMonday.getTime()) / (24 * 60 * 60 * 1000));
   const weeksDiff = Math.floor(daysDiff / 7);
   
-  // Current week is 43, calculate relative to that
+  // Current week should be 43, calculate relative to that
   let weekNumber = 43 + weeksDiff;
   
   // Handle year transitions (weeks 1-53)

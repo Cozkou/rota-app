@@ -5,7 +5,14 @@ import { supabase } from '@/lib/supabase';
 
 export default function MigrationPage() {
   const [isRunning, setIsRunning] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{
+    success: boolean;
+    message: string;
+    currentWeekStart?: string;
+    nextWeekStart?: string;
+    staffCount?: number;
+    nextWeekDataCount?: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const runMigration = async () => {
@@ -24,8 +31,8 @@ export default function MigrationPage() {
       }
 
       setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setIsRunning(false);
     }
@@ -45,11 +52,11 @@ export default function MigrationPage() {
           </p>
           <ul className="list-disc list-inside text-yellow-700 mt-2 space-y-1">
             <li>Archive current week data from staff table to weekly_schedules</li>
-            <li>Move next week's data from weekly_schedules to staff table</li>
-            <li>Update the "current week" to be next week</li>
+            <li>Move next week&apos;s data from weekly_schedules to staff table</li>
+            <li>Update the &quot;current week&quot; to be next week</li>
           </ul>
           <p className="text-yellow-700 mt-2 font-semibold">
-            Only run this when you're ready to advance to the next week!
+            Only run this when you&apos;re ready to advance to the next week!
           </p>
         </div>
 
@@ -109,7 +116,7 @@ export default function MigrationPage() {
           <div className="text-blue-700 space-y-2">
             <p><strong>Step 1:</strong> Current week data in staff table gets archived to weekly_schedules</p>
             <p><strong>Step 2:</strong> Next week data from weekly_schedules gets moved to staff table</p>
-            <p><strong>Step 3:</strong> Next week data is removed from weekly_schedules (now it's current)</p>
+            <p><strong>Step 3:</strong> Next week data is removed from weekly_schedules (now it&apos;s current)</p>
             <p><strong>Result:</strong> The system advances one week forward</p>
           </div>
         </div>

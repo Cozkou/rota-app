@@ -199,7 +199,8 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
     if (userRole) {
       fetchStaffData();
     }
-  }, [selectedWeek, userRole, fetchStaffData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWeek, userRole]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

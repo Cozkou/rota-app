@@ -133,51 +133,61 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
 
   const fetchStaffData = useCallback(async () => {
     try {
-      // Get selected week's Monday date
-      const monday = getMonday(selectedWeek);
-      const weekStartDate = monday.toISOString().split('T')[0];
-
       const { data: staffData } = await supabase
         .from('staff')
         .select('*')
         .eq('terminal', terminal);
 
       if (staffData) {
-        // Get published schedules from weekly_schedules table for selected week
-        const { data: weeklySchedules } = await supabase
-          .from("weekly_schedules")
-          .select("*")
-          .eq("week_starting_date", weekStartDate)
-          .in("staff_id", staffData.map(s => parseInt(s.id)));
-
-        // Convert staff data to include shifts array and calculate hours
-        const staffWithShifts = staffData.map(person => {
-          const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
-          
-          const shifts = days.map(day => {
-            const dayLower = day.name.toLowerCase();
-            if (weeklySchedule && weeklySchedule[dayLower]) {
-              // Use published data from weekly_schedules
-              return weeklySchedule[dayLower];
-            }
-            
-            // For current week, fallback to staff table data
-            if (isCurrentWeek()) {
+        if (isCurrentWeek()) {
+          // Current week: data is in staff table
+          const staffWithShifts = staffData.map(person => {
+            const shifts = days.map(day => {
+              const dayLower = day.name.toLowerCase();
               return person[dayLower] || '';
-            }
+            });
             
-            return '';
+            const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+            return {
+              ...person,
+              shifts,
+              hours: totalHours
+            };
           });
-          
-          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-          return {
-            ...person,
-            shifts,
-            hours: totalHours
-          };
-        });
 
-        setStaff(staffWithShifts);
+          setStaff(staffWithShifts);
+        } else {
+          // Past or future week: data is in weekly_schedules table
+          const monday = getMonday(selectedWeek);
+          const weekStartDate = monday.toISOString().split('T')[0];
+
+          const { data: weeklySchedules } = await supabase
+            .from("weekly_schedules")
+            .select("*")
+            .eq("week_starting_date", weekStartDate)
+            .in("staff_id", staffData.map(s => parseInt(s.id)));
+
+          const staffWithShifts = staffData.map(person => {
+            const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
+            
+            const shifts = days.map(day => {
+              const dayLower = day.name.toLowerCase();
+              if (weeklySchedule && weeklySchedule[dayLower]) {
+                return weeklySchedule[dayLower];
+              }
+              return '';
+            });
+            
+            const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+            return {
+              ...person,
+              shifts,
+              hours: totalHours
+            };
+          });
+
+          setStaff(staffWithShifts);
+        }
       }
     } catch (error) {
       console.error('Error fetching staff data:', error);

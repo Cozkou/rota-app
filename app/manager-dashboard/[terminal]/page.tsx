@@ -82,59 +82,70 @@ export default function TerminalRotaPage() {
 
       if (!staffData) return;
 
-      // Get weekly schedules for the selected week
-      const { data: weeklySchedules } = await supabase
-        .from("weekly_schedules")
-        .select("*")
-        .eq("week_starting_date", weekStartDate)
-        .in("staff_id", staffData.map(s => parseInt(s.id)));
-
-      // Convert staff data to include both draft and published shifts
-      const staffWithShifts = staffData.map(person => {
-        const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
-        
-        const shifts = days.map(day => {
-          const dayLower = day.toLowerCase();
-          if (weeklySchedule) {
-            // Use draft data if available, otherwise use published data
-            return weeklySchedule[`draft_${dayLower}`] || weeklySchedule[dayLower] || '';
-          }
-          
-          // For current week, fallback to staff table data
-          if (isCurrentWeek()) {
+      if (isCurrentWeek()) {
+        // Current week: data is in staff table
+        const staffWithShifts = staffData.map(person => {
+          const shifts = days.map(day => {
+            const dayLower = day.toLowerCase();
             const draftColumn = `draft_${dayLower}`;
             const publishedColumn = dayLower;
             return person[draftColumn] || person[publishedColumn] || '';
-          }
-          
-          return '';
-        });
+          });
 
-        const publishedShifts = days.map(day => {
-          const dayLower = day.toLowerCase();
-          if (weeklySchedule) {
-            // Use only published data
-            return weeklySchedule[dayLower] || '';
-          }
-          
-          // For current week, fallback to staff table published data
-          if (isCurrentWeek()) {
+          const publishedShifts = days.map(day => {
+            const dayLower = day.toLowerCase();
             return person[dayLower] || '';
-          }
+          });
           
-          return '';
+          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          return {
+            ...person,
+            shifts,
+            publishedShifts,
+            hours: totalHours
+          };
         });
-        
-        const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
-        return {
-          ...person,
-          shifts,
-          publishedShifts,
-          hours: totalHours
-        };
-      });
 
-      setStaff(staffWithShifts);
+        setStaff(staffWithShifts);
+      } else {
+        // Past or future week: data is in weekly_schedules table
+        const { data: weeklySchedules } = await supabase
+          .from("weekly_schedules")
+          .select("*")
+          .eq("week_starting_date", weekStartDate)
+          .in("staff_id", staffData.map(s => parseInt(s.id)));
+
+        const staffWithShifts = staffData.map(person => {
+          const weeklySchedule = weeklySchedules?.find(ws => ws.staff_id === parseInt(person.id));
+          
+          const shifts = days.map(day => {
+            const dayLower = day.toLowerCase();
+            if (weeklySchedule) {
+              // Use draft data if available, otherwise use published data
+              return weeklySchedule[`draft_${dayLower}`] || weeklySchedule[dayLower] || '';
+            }
+            return '';
+          });
+
+          const publishedShifts = days.map(day => {
+            const dayLower = day.toLowerCase();
+            if (weeklySchedule) {
+              return weeklySchedule[dayLower] || '';
+            }
+            return '';
+          });
+          
+          const totalHours = shifts.reduce((sum, shift) => sum + calculateHours(shift), 0);
+          return {
+            ...person,
+            shifts,
+            publishedShifts,
+            hours: totalHours
+          };
+        });
+
+        setStaff(staffWithShifts);
+      }
     } catch (error) {
       console.error('Error loading week data:', error);
     }
@@ -300,14 +311,14 @@ export default function TerminalRotaPage() {
         console.log('Updates for', person.name, ':', updates);
         
         if (isCurrentWeek()) {
-          // For current week, update the staff table
+          // Current week: save to staff table
           const { error } = await supabase
             .from('staff')
             .update(updates)
             .eq('id', person.id);
           if (error) throw error;
         } else {
-          // For future weeks, use weekly_schedules table
+          // Future/past week: save to weekly_schedules table
           const { error } = await supabase
             .from('weekly_schedules')
             .upsert({
@@ -346,14 +357,14 @@ export default function TerminalRotaPage() {
         });
         
         if (isCurrentWeek()) {
-          // For current week, update the staff table
+          // Current week: publish to staff table
           const { error } = await supabase
             .from('staff')
             .update(updates)
             .eq('id', person.id);
           if (error) throw error;
         } else {
-          // For future weeks, use weekly_schedules table
+          // Future/past week: publish to weekly_schedules table
           const { error } = await supabase
             .from('weekly_schedules')
             .upsert({

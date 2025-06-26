@@ -436,15 +436,15 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
                   {days.map((day, index) => (
                     <th key={day.name} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold ${
-                      isCurrentDay(index) ? 'bg-green-100 border-green-300' : ''
+                      isCurrentDay(index) ? 'bg-gradient-to-b from-green-50/70 to-pink-50 border-green-200/50' : ''
                     }`}>
                       <div className="text-center">
-                        <div className={isCurrentDay(index) ? 'text-green-700 font-bold' : ''}>{day.name}</div>
+                        <div className={isCurrentDay(index) ? 'text-green-700/80 font-bold' : ''}>{day.name}</div>
                         <div className={`text-xs font-normal ${
-                          isCurrentDay(index) ? 'text-green-600' : 'text-pink-600'
+                          isCurrentDay(index) ? 'text-green-600/80' : 'text-pink-600'
                         }`}>{getDateForDay(index)}</div>
                         {isCurrentDay(index) && (
-                          <div className="text-xs text-green-600 font-semibold">TODAY</div>
+                          <div className="text-xs text-green-600/70 font-medium">TODAY</div>
                         )}
                       </div>
                     </th>
@@ -469,16 +469,16 @@ export default function TerminalView({ params }: { params: Promise<{ terminal: s
                     </td>
                     {days.map((day, dayIndex) => (
                       <td key={day.name} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 ${
-                        isCurrentDay(dayIndex) ? 'bg-green-50 border-green-200' : ''
+                        isCurrentDay(dayIndex) ? 'bg-gradient-to-b from-green-50/40 to-pink-50/80 border-green-200/30' : ''
                       }`}>
                         <div className={`text-xs font-medium text-center ${
-                          isCurrentDay(dayIndex) ? 'text-green-700' : 'text-gray-700'
+                          isCurrentDay(dayIndex) ? 'text-green-700/90' : 'text-gray-700'
                         }`}>
                           <div className="flex items-center gap-1 justify-center">
                             <span>{person.shifts[dayIndex] || '-'}</span>
                             {person.shifts[dayIndex] && person.shifts[dayIndex].includes('-') && (
                               <span className={`text-xs whitespace-nowrap ${
-                                isCurrentDay(dayIndex) ? 'text-green-600' : 'text-gray-500'
+                                isCurrentDay(dayIndex) ? 'text-green-600/80' : 'text-gray-500'
                               }`}>
                                 ({(() => {
                                   const hours = calculateHours(person.shifts[dayIndex]);

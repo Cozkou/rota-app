@@ -890,20 +890,7 @@ export default function TerminalRotaPage() {
     return `${day}-${month}`;
   };
 
-  const getCurrentDayIndex = (): number => {
-    // Get current date in BST timezone
-    const now = new Date();
-    const bstOffset = 1; // BST is UTC+1
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const bstTime = new Date(utc + (bstOffset * 3600000));
-    
-    return bstTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  };
 
-  const isCurrentDay = (dayIndex: number): boolean => {
-    if (!isCurrentWeek()) return false;
-    return getCurrentDayIndex() === dayIndex;
-  };
 
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -1122,17 +1109,10 @@ export default function TerminalRotaPage() {
                   <th className="border-b border-pink-100 px-2 sm:px-4 py-2 sm:py-3 font-bold">Name</th>
                   <th className="border-b border-pink-100 px-1 py-2 sm:py-3 font-bold w-14">Hours</th>
                   {days.map((day, index) => (
-                    <th key={day} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold ${
-                      isCurrentDay(index) ? 'bg-green-100 border-green-300' : ''
-                    }`}>
+                    <th key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 font-bold">
                       <div className="text-center">
-                        <div className={isCurrentDay(index) ? 'text-green-700 font-bold' : ''}>{day}</div>
-                        <div className={`text-xs font-normal ${
-                          isCurrentDay(index) ? 'text-green-600' : 'text-pink-600'
-                        }`}>{getDateForDay(index)}</div>
-                        {isCurrentDay(index) && (
-                          <div className="text-xs text-green-600 font-semibold">TODAY</div>
-                        )}
+                        <div>{day}</div>
+                        <div className="text-xs font-normal text-pink-600">{getDateForDay(index)}</div>
                       </div>
                     </th>
                   ))}
@@ -1171,9 +1151,7 @@ export default function TerminalRotaPage() {
                     {days.map((day, d) => {
                       const hasChanges = person.shifts[d] !== person.publishedShifts[d];
                       return (
-                        <td key={day} className={`border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3 ${
-                          isCurrentDay(d) ? 'bg-green-50 border-green-200' : ''
-                        }`}>
+                        <td key={day} className="border-b border-pink-100 px-1 sm:px-2 py-2 sm:py-3">
                           <div className="flex items-center gap-1 justify-center">
                             <input
                               type="text"
@@ -1183,9 +1161,7 @@ export default function TerminalRotaPage() {
                               className={`px-1 py-1 rounded-lg border placeholder-red-400 text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent transition-colors text-xs text-center ${
                                 hasChanges 
                                   ? 'border-orange-400 bg-orange-50 focus:ring-orange-500' 
-                                  : isCurrentDay(d)
-                                    ? 'border-green-300 bg-green-50 focus:ring-green-500'
-                                    : 'border-pink-200 bg-white focus:ring-pink-500'
+                                  : 'border-pink-200 bg-white focus:ring-pink-500'
                               }`}
                               style={{
                                 width: Math.max(person.shifts[d]?.length * 8 + 16, 50) + 'px',
@@ -1193,9 +1169,7 @@ export default function TerminalRotaPage() {
                               }}
                             />
                             {person.shifts[d] && person.shifts[d].includes('-') && (
-                              <span className={`text-xs whitespace-nowrap ${
-                                isCurrentDay(d) ? 'text-green-600' : 'text-gray-500'
-                              }`}>
+                              <span className="text-xs text-gray-500 whitespace-nowrap">
                                 ({(() => {
                                   const hours = calculateHours(person.shifts[d]);
                                   return hours % 1 === 0 ? `${hours}h` : `${Math.round(hours * 2) / 2}h`;

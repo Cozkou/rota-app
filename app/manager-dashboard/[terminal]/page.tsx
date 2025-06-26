@@ -1237,16 +1237,27 @@ export default function TerminalRotaPage() {
             type="text"
             value={newStaff}
             onChange={(e) => setNewStaff(e.target.value)}
-            placeholder="Enter staff name"
+            placeholder="Enter Staff Name"
             className="flex-1 sm:flex-none sm:w-48 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
           />
-          <input
-            type="text"
-            value={newStaffRole}
-            onChange={(e) => setNewStaffRole(e.target.value)}
-            placeholder="Enter role"
-            className="flex-1 sm:flex-none sm:w-40 px-3 sm:px-4 py-2 sm:py-3 rounded-lg border border-pink-200 placeholder-pink-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors"
-          />
+          <div className="relative flex-1 sm:flex-none sm:w-48">
+            <select
+              value={newStaffRole}
+              onChange={(e) => setNewStaffRole(e.target.value)}
+              className="w-full pl-3 sm:pl-4 pr-8 py-2 sm:py-3 rounded-lg border border-pink-200 text-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-colors bg-white appearance-none"
+            >
+              <option value="" disabled className="text-pink-300">Select role</option>
+              <option value="Manager" className="text-gray-900">Manager</option>
+              <option value="Supervisor" className="text-gray-900">Supervisor</option>
+              <option value="Sales Assistant" className="text-gray-900">Sales Assistant</option>
+              <option value="Other Terminal" className="text-gray-900">Other Terminal</option>
+            </select>
+            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+              <svg className="w-4 h-4 text-pink-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
           <button
             onClick={handleAddStaff}
             className="px-6 py-2 sm:py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm sm:text-base font-medium"

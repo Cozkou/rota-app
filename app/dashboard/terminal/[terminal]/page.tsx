@@ -14,17 +14,26 @@ const getMonday = (date: Date): Date => {
 };
 
 const getWeekNumber = (date: Date): number => {
-  // Calculate ISO week number
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  // Set to nearest Thursday: current date + 4 - current day number
-  // Make Sunday's day number 7
-  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-  // Get first day of year
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  // Calculate full weeks to nearest Thursday
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return weekNo;
+  // Custom week numbering system - current week is 43
+  const today = new Date();
+  const todayMonday = getMonday(today);
+  const dateMonday = getMonday(date);
+  
+  // Calculate difference in weeks between the given date and today
+  const daysDiff = Math.floor((dateMonday.getTime() - todayMonday.getTime()) / (24 * 60 * 60 * 1000));
+  const weeksDiff = Math.floor(daysDiff / 7);
+  
+  // Current week is 43, calculate relative to that
+  let weekNumber = 43 + weeksDiff;
+  
+  // Handle year transitions (weeks 1-53)
+  if (weekNumber > 53) {
+    weekNumber = ((weekNumber - 1) % 53) + 1;
+  } else if (weekNumber < 1) {
+    weekNumber = 53 + (weekNumber % 53);
+  }
+  
+  return weekNumber;
 };
 
 interface Staff {
